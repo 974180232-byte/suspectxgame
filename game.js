@@ -1350,7 +1350,8 @@ const app = {
             gd.resultConfirmed = true;
             // 记录自动开启下一轮的时间点，由所有玩家的轮询统一推进，
             // 避免只依赖单个标签页的 setTimeout（该定时器失效会导致结算阶段无限循环、无法进入下一轮）
-            gd.autoNextAt = Date.now() + 2000;
+            // 结算弹窗保留 5 秒，方便玩家看完结算结果
+            gd.autoNextAt = Date.now() + 5000;
             saveRoom(this.currentRoomId, room);
             this._resultShown = true;
             this.showResultModal(gd, killer, resultDetails, initMarkers, totalWrongMarkers, false);
@@ -1358,15 +1359,32 @@ const app = {
     },
 
     startNextRound() {
+        // 用 RPC 原子获取「推进权」：只有一台设备能创建下一轮，避免多设备并发推进互相覆盖。
+        // 拿到推进权（true）的才继续；拿不到（false，另一台设备已在推进）则等待同步。
+        if (useCloud && supabaseClient) {
+            supabaseClient
+                .rpc('try_start_next_round', { room_id: this.currentRoomId })
+                .then(({ data, error }) => {
+                    if (error) {
+                        console.warn('try_start_next_round RPC 失败', error);
+                        return;
+                    }
+                    if (data === true) {
+                        this.doCreateNextRound();
+                    }
+                });
+            return;
+        }
+        // 本地模式：直接推进
+        this.doCreateNextRound();
+    },
+
+    // 真正创建下一轮（由获得推进权的设备执行）
+    doCreateNextRound() {
         const room = getRoom(this.currentRoomId);
         if (!room) return;
         // 只在结算阶段触发；phase 离开 revealing 后（下一轮已建立）不再重复推进
         if (!room.gameData || room.gameData.phase !== 'revealing') return;
-        // 并发保护：标记「正在推进」，避免多个标签页同时创建新一局相互覆盖。
-        // 新一局是新对象，不含此标记，因此不影响后续轮次。
-        if (room.gameData.autoNextStarted) return;
-        room.gameData.autoNextStarted = true;
-        saveRoom(this.currentRoomId, room);
         const players = room.players || {};
         const playerCount = Object.values(players).filter(p => p && p.name).length;
         if (playerCount < 2) {
