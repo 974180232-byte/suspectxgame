@@ -51,6 +51,8 @@ const ROOM_COLLECTION = 'rooms';
 function saveRoom(roomId, roomData) {
     // 防御：roomId 无效时不写入，避免产生「roomId 为 null/undefined」的脏数据
     if (!roomId || !roomData) return;
+    // 记录更新时间戳，供轮询判断「只接受更新的数据」，避免本地新写入被旧云端数据覆盖
+    roomData.updatedAt = Date.now();
     if (useCloud && supabaseClient) {
         // 同步更新内存缓存，让 getRoom/getAllRooms 立即返回最新数据
         cloudRoomsCache[roomId] = roomData;
@@ -150,11 +152,18 @@ function pullRoomsFromCloud() {
             let changed = false;
             rows.forEach(row => {
                 if (row && row.data) {
-                    // 仅当数据不同或缓存不存在时才更新并触发界面刷新，避免频繁重绘
-                    if (JSON.stringify(cloudRoomsCache[row.id]) !== JSON.stringify(row.data)) {
-                        cloudRoomsCache[row.id] = row.data;
-                        changed = true;
-                        handleCrossTabUpdate(row.id);
+                    const cloudData = row.data;
+                    const localData = cloudRoomsCache[row.id];
+                    // 仅当云端数据比本地缓存更新时才覆盖（用 updatedAt 判断），
+                    // 避免「本地刚写入但云端尚未确认」的状态被旧数据覆盖，导致投票后回合回退等问题。
+                    const cloudTime = cloudData && cloudData.updatedAt ? cloudData.updatedAt : 0;
+                    const localTime = localData && localData.updatedAt ? localData.updatedAt : 0;
+                    if (!localData || cloudTime >= localTime) {
+                        if (JSON.stringify(localData) !== JSON.stringify(cloudData)) {
+                            cloudRoomsCache[row.id] = cloudData;
+                            changed = true;
+                            handleCrossTabUpdate(row.id);
+                        }
                     }
                 }
             });
@@ -469,8 +478,8 @@ const app = {
         };
         saveRoom(roomId, roomData);
         this.currentRoomId = roomId;
-        // 房主直接加入，无需输入口令
-        this.joinRoom(roomId, password);
+        // 房主直接加入，无需输入口令；传入 roomData 避免读到旧缓存导致「0 人」
+        this.joinRoom(roomId, password, roomData);
         this.showToast('房间口令：' + password + '（请分享给朋友）');
     },
 
@@ -486,9 +495,10 @@ const app = {
         this.joinRoom(roomId, (password || '').trim());
     },
 
-    joinRoom(roomId, password) {
+    joinRoom(roomId, password, explicitRoom) {
         if (!this.playerName || !this.playerId) return;
-        const room = getRoom(roomId);
+        // createRoom 场景直接传入刚创建的 roomData，避免 getRoom 读到旧缓存导致「0 人」等问题
+        const room = explicitRoom || getRoom(roomId);
         if (!room) {
             this.showToast('房间不存在');
             return;
@@ -567,7 +577,9 @@ const app = {
         const mySeat = players[myId] ? players[myId].seat : -1;
 
         document.getElementById('room-title').textContent = `📋 ${room.name}`;
-        document.getElementById('room-code-display').textContent = `房间ID: ${this.currentRoomId}`;
+        // 一直显示房间 ID 和口令，方便房主随时分享给朋友
+        const pwText = room.password ? ` | 房间口令: ${room.password}` : '';
+        document.getElementById('room-code-display').textContent = `房间ID: ${this.currentRoomId}${pwText}`;
 
         let seatHTML = '';
         for (let i = 0; i < 5; i++) {
