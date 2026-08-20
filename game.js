@@ -756,7 +756,7 @@ const app = {
 
     // ============ 游戏逻辑处理 ============
     updateGameFromRoom(room) {
-        const gd = room.gameData;
+        let gd = room.gameData;
         // 处理游戏结束回到房间的情况（gameData 为 null）
         if (!gd) {
             // 如果之前有弹窗，关闭它
