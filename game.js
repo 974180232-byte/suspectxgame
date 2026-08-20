@@ -199,18 +199,85 @@ function pullRoomsFromCloud() {
 
 // 定时轮询云端，作为跨设备同步的可靠兜底（不依赖 Realtime 是否生效）
 let cloudSyncTimer = null;
+let lastHeartbeat = 0;
+const HEARTBEAT_INTERVAL = 10000;   // 每 10 秒刷新一次活跃时间
+const OFFLINE_TIMEOUT = 300000;     // 300 秒无活跃视为掉线
+
 function startCloudSyncLoop() {
     stopCloudSyncLoop();
     const tick = () => {
         if (useCloud && supabaseClient) {
             pullRoomsFromCloud();
+            heartbeatCurrentRoom();       // 刷新自己在房间中的活跃时间
+            cleanupOfflinePlayers();      // 清理掉线的玩家 / 解散房主掉线的房间
             // 即使云端数据未变化，也要对当前房间做「结算自动推进」检查，
             // 否则 autoNextAt 到达后因数据无变化不触发 updateGameFromRoom，会一直卡在结算。
             tryAutoAdvanceCurrentRoom();
+            tryRejoinPendingRoom();      // 若有待重连的房间且已同步到缓存，则自动回到房间
         }
         cloudSyncTimer = setTimeout(tick, 1000);
     };
     tick();
+}
+
+// 处理「刷新/重连」：待重连的房间同步到缓存后，自动回到房间
+function tryRejoinPendingRoom() {
+    if (!app || !app.pendingRejoin) return;
+    const roomId = app.pendingRejoin;
+    const room = getRoom(roomId);
+    if (room) {
+        app.pendingRejoin = null;
+        app.rejoinRoom(roomId);
+    }
+    // 若云端确认没有该房间（清理逻辑已移除它），清除待重连标记回到大厅
+    if (!room && !cloudRoomsCache[roomId]) {
+        app.pendingRejoin = null;
+        localStorage.removeItem('mm_current_room');
+    }
+}
+
+// 心跳：若玩家在房间中，定期刷新自己的 lastActive，防止被误判为掉线。
+// 为避免频繁写云端，仅在超过心跳间隔时才写入。
+function heartbeatCurrentRoom() {
+    if (!app || !app.currentRoomId) return;
+    if (Date.now() - lastHeartbeat < HEARTBEAT_INTERVAL) return;
+    lastHeartbeat = Date.now();
+    const room = getRoom(app.currentRoomId);
+    if (!room || !room.players || !room.players[app.playerId]) return;
+    room.players[app.playerId].lastActive = Date.now();
+    saveRoom(app.currentRoomId, room);
+}
+
+// 掉线清理：在轮询到的房间数据中，移除「超过 OFFLINE_TIMEOUT 无活跃」的玩家；
+// 若房主掉线，则解散（删除）房间。
+function cleanupOfflinePlayers() {
+    if (!app || !useCloud) return;
+    const roomId = app.currentRoomId;
+    if (!roomId) return;
+    const room = getRoom(roomId);
+    if (!room || !room.players) return;
+    const now = Date.now();
+    let changed = false;
+    // 房主掉线 → 解散房间
+    const owner = room.players[room.createdBy];
+    if (!owner || (now - (owner.lastActive || owner.joinedAt || 0) > OFFLINE_TIMEOUT)) {
+        deleteRoom(roomId);
+        return;
+    }
+    // 移除掉线的非房主玩家
+    Object.keys(room.players).forEach(pid => {
+        const p = room.players[pid];
+        if (pid !== app.playerId && p) {
+            const lastActive = p.lastActive || p.joinedAt || 0;
+            if (now - lastActive > OFFLINE_TIMEOUT) {
+                delete room.players[pid];
+                changed = true;
+            }
+        }
+    });
+    if (changed) {
+        saveRoom(roomId, room);
+    }
 }
 function stopCloudSyncLoop() {
     if (cloudSyncTimer) {
@@ -358,9 +425,22 @@ const app = {
         }
         this.playerName = name;
         this.playerId = 'player_' + Date.now() + '_' + Math.random().toString(36).substr(2, 8);
-        sessionStorage.setItem('mm_player_id', this.playerId);
-        sessionStorage.setItem('mm_player_name', this.playerName);
+        // 用 localStorage 持久化身份，刷新/关闭网页后能恢复身份重新连接
+        localStorage.setItem('mm_player_id', this.playerId);
+        localStorage.setItem('mm_player_name', this.playerName);
         this.showLobby();
+    },
+
+    // 恢复之前保存的身份（供刷新后重连）
+    restoreSession() {
+        const savedId = localStorage.getItem('mm_player_id');
+        const savedName = localStorage.getItem('mm_player_name');
+        if (savedId && savedName) {
+            this.playerId = savedId;
+            this.playerName = savedName;
+            return true;
+        }
+        return false;
     },
 
     generateUniqueRandomName() {
@@ -401,8 +481,9 @@ const app = {
         this.currentRoomData = null;
         this.mySeat = -1;
         this.gamePhase = 'idle';
-        sessionStorage.removeItem('mm_player_id');
-        sessionStorage.removeItem('mm_player_name');
+        localStorage.removeItem('mm_player_id');
+        localStorage.removeItem('mm_player_name');
+        localStorage.removeItem('mm_current_room');
         document.getElementById('name-input').value = '';
         this.showLogin();
     },
@@ -493,6 +574,33 @@ const app = {
         }).join('');
     },
 
+    // 刷新/重连：恢复身份后自动回到之前所在的房间
+    rejoinRoom(roomId) {
+        if (!this.playerId) return;
+        // 等云端数据同步后房间可能才在缓存里，先尝试直接读，稍后靠轮询兜底
+        const room = getRoom(roomId);
+        if (!room) {
+            // 房间还没同步到本地缓存：保留 pendingRejoin，由轮询拉取到后自动重连；
+            // 若云端确实已删除，轮询会清除 pendingRejoin 回到大厅。
+            this.pendingRejoin = roomId;
+            this.currentRoomId = null;
+            this.showLobby();
+            return;
+        }
+        // 房间存在：恢复该玩家（若已被移除则重新加入）
+        if (!room.players || !room.players[this.playerId]) {
+            this.joinRoom(roomId, room.password || '');
+            return;
+        }
+        // 已在该房间：刷新活跃时间并进入
+        room.players[this.playerId].lastActive = Date.now();
+        saveRoom(roomId, room);
+        this.currentRoomId = roomId;
+        localStorage.setItem('mm_current_room', roomId);
+        this.listenToRoom(roomId);
+        this.showRoom();
+    },
+
     createRoom() {
         if (!this.playerName) return;
         const roomId = 'room_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
@@ -566,12 +674,14 @@ const app = {
             connected: true,
             markers: 6,
             wrongMarkers: 0,
-            joinedAt: Date.now()
+            joinedAt: Date.now(),
+            lastActive: Date.now()
         };
         room.players = room.players || {};
         room.players[this.playerId] = playerData;
         saveRoom(roomId, room);
         this.currentRoomId = roomId;
+        localStorage.setItem('mm_current_room', roomId); // 保存当前房间，刷新后重连
         this.listenToRoom(roomId);
         this.showRoom();
         this.showToast('已加入房间，座位 #' + (seat + 1));
@@ -687,6 +797,7 @@ const app = {
         this.currentRoomData = null;
         this.mySeat = -1;
         this.gamePhase = 'idle';
+        localStorage.removeItem('mm_current_room');
     },
 
     // ============ 游戏开始 ============
@@ -1646,7 +1757,19 @@ const ALL_CARDS = ['2', '3', '4', '5', '6', '7', '8', 'X', 'X'];
 
 // ============ 初始化 ============
 document.addEventListener('DOMContentLoaded', () => {
-    app.showLogin();
+    // 尝试恢复之前的身份并自动回到房间（刷新/关闭网页后重连）
+    const restored = app.restoreSession();
+    const savedRoom = localStorage.getItem('mm_current_room');
+    if (restored && savedRoom) {
+        app.playerId = localStorage.getItem('mm_player_id');
+        app.playerName = localStorage.getItem('mm_player_name');
+        // 尝试立即重连；若云端数据尚未同步（房间不在本地缓存），
+        // 会设置 pendingRejoin，由轮询拉取到数据后自动重连
+        app.rejoinRoom(savedRoom);
+        app.pendingRejoin = savedRoom;
+    } else {
+        app.showLogin();
+    }
     document.getElementById('name-input').addEventListener('keypress', (e) => {
         if (e.key === 'Enter') app.login();
     });
