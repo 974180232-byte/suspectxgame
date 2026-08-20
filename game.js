@@ -154,16 +154,12 @@ function pullRoomsFromCloud() {
                 if (row && row.data) {
                     const cloudData = row.data;
                     const localData = cloudRoomsCache[row.id];
-                    // 仅当云端数据比本地缓存更新时才覆盖（用 updatedAt 判断），
-                    // 避免「本地刚写入但云端尚未确认」的状态被旧数据覆盖，导致投票后回合回退等问题。
-                    const cloudTime = cloudData && cloudData.updatedAt ? cloudData.updatedAt : 0;
-                    const localTime = localData && localData.updatedAt ? localData.updatedAt : 0;
-                    if (!localData || cloudTime >= localTime) {
-                        if (JSON.stringify(localData) !== JSON.stringify(cloudData)) {
-                            cloudRoomsCache[row.id] = cloudData;
-                            changed = true;
-                            handleCrossTabUpdate(row.id);
-                        }
+                    // 云端是权威数据：只要与本地不同就覆盖本地缓存并触发界面更新。
+                    // （不依赖 updatedAt 判断——多设备下时间戳不可靠，会导致无法同步到最新的结算推进状态。）
+                    if (JSON.stringify(localData) !== JSON.stringify(cloudData)) {
+                        cloudRoomsCache[row.id] = cloudData;
+                        changed = true;
+                        handleCrossTabUpdate(row.id);
                     }
                 }
             });
