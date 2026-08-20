@@ -1078,9 +1078,18 @@ const app = {
         if (gd.seenHand && gd.seenHand[this.playerId]) return; // 已确认过，避免重复
         gd.seenHand = gd.seenHand || {};
         gd.seenHand[this.playerId] = true;
-        // 只标记并保存；是否全员确认、是否推进由 updateGameFromRoom 统一判断，
-        // 避免在 Supabase 异步同步下因本地缓存未及时拿到他人确认而卡住
-        saveRoom(this.currentRoomId, room);
+        // 本地先合并（即时 UI 反馈）
+        this.renderGame();
+        // 云端：用 RPC 在数据库层合并 seenHand，避免多人同时确认时互相覆盖
+        if (useCloud && supabaseClient) {
+            supabaseClient
+                .rpc('add_seen_hand', { room_id: this.currentRoomId, player_id: this.playerId })
+                .then(({ error }) => {
+                    if (error) console.warn('confirmHand RPC 失败', error);
+                });
+        } else {
+            saveRoom(this.currentRoomId, room);
+        }
     },
 
     passCards(room) {
