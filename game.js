@@ -1,61 +1,47 @@
-// ============ Firebase 配置（可选） ============
-// 在 https://console.firebase.google.com 创建项目并启用 Realtime Database 后，
-// 填入下方配置即可实现真正意义上的跨设备多人联机（部署到 GitHub Pages 也能用）。
-// 若不填写，将自动回退到「本地模式」（仅同一浏览器多标签页可联机）。
-const firebaseConfig = {
-    apiKey: "AIzaSyBGNFb5Gor9Yk0-rteL3mm9HLIsH3-OPBM",
-    authDomain: "murder-mystery-1aff7.firebaseapp.com",
-    databaseURL: "https://murder-mystery-1aff7-default-rtdb.asia-southeast1.firebasedatabase.app",
-    projectId: "murder-mystery-1aff7",
-    storageBucket: "murder-mystery-1aff7.firebasestorage.app",
-    messagingSenderId: "263644023144",
-    appId: "1:263644023144:web:93f985237f0dcea3acaedd"
-};
+// ============ Supabase 配置（跨设备联机） ============
+// 在 https://supabase.com 创建项目后，填入下方 Project URL 与 anon key。
+// 若 Supabase SDK 加载失败或未配置，将自动回退到「本地模式」（仅同一浏览器多标签页可联机）。
+const SUPABASE_URL = 'https://thmxdynsofffarecfauw.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_prdBh_WqbbiZbCXm5nLeBA_ojMhFyo3';
 
 // ============ 数据库初始化 ============
-let db = null;
-let useFirebase = false;
-// 内存缓存：让 getRoom/getAllRooms 可以同步返回最新数据（Firebase 读取是异步的）
-let firebaseRoomsCache = {};
+let supabaseClient = null;
+let useCloud = false;
+// 内存缓存：让 getRoom/getAllRooms 可以同步返回最新数据（Supabase 读取是异步的）
+let cloudRoomsCache = {};
 
-// 尝试以「匿名认证 + 锁定规则」的方式连接 Firebase。
-// 只有配置了真实 firebaseConfig 才会启用；否则回退到本地模式。
-function initFirebase() {
-    // 未配置真实密钥 → 本地模式
-    if (typeof firebase === 'undefined' || !firebaseConfig.apiKey || firebaseConfig.apiKey === 'YOUR_API_KEY') {
-        console.log('✅ 本地模式已启动（仅同一浏览器多标签页可联机，配置 Firebase 后支持跨设备）');
+// 尝试连接 Supabase；只有 SDK 可用且配置完整才启用，否则回退本地模式。
+function initSupabase() {
+    if (typeof supabase === 'undefined' || !SUPABASE_URL || !SUPABASE_KEY) {
+        console.log('✅ 本地模式已启动（仅同一浏览器多标签页可联机，配置 Supabase 后支持跨设备）');
         return;
     }
     try {
-        firebase.initializeApp(firebaseConfig);
-        // 先匿名登录，认证成功后才具备数据库读写权限（配合锁定模式规则 auth != null）
-        firebase.auth().signInAnonymously()
-            .then(() => {
-                db = firebase.database();
-                useFirebase = true;
-                console.log('✅ Firebase 已连接（匿名认证成功，支持跨设备联机）');
-                initFirebaseListener();
-                // 认证完成后刷新一次房间列表
-                if (app && typeof app.refreshRooms === 'function') {
-                    app.refreshRooms();
-                }
-            })
-            .catch((err) => {
-                console.warn('Firebase 匿名认证失败，使用本地模式', err);
-            });
+        supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        useCloud = true;
+        console.log('✅ Supabase 已连接（支持跨设备联机）');
+        pullRoomsFromCloud();          // 拉取远端所有房间到缓存
+        subscribeRoomsFromCloud();     // 订阅房间变化
     } catch (e) {
-        console.warn('Firebase 初始化失败，使用本地模式', e);
+        console.warn('Supabase 初始化失败，使用本地模式', e);
     }
 }
 
-// ============ 数据层（统一接口，支持 Firebase / 本地双后端） ============
+// ============ 数据层（统一接口，支持 Supabase / 本地双后端） ============
 const ROOM_PREFIX = 'mm_room_';
 const ROOM_COLLECTION = 'rooms';
 
 function saveRoom(roomId, roomData) {
-    if (useFirebase && db) {
-        firebaseRoomsCache[roomId] = roomData;
-        db.ref(ROOM_COLLECTION + '/' + roomId).set(roomData).catch(e => console.warn('Firebase 写入失败', e));
+    if (useCloud && supabaseClient) {
+        // 同步更新内存缓存，让 getRoom/getAllRooms 立即返回最新数据
+        cloudRoomsCache[roomId] = roomData;
+        // 异步写入 Supabase（id 主键，upsert 覆盖）
+        supabaseClient
+            .from(ROOM_COLLECTION)
+            .upsert({ id: roomId, data: roomData }, { onConflict: 'id' })
+            .then(({ error }) => {
+                if (error) console.warn('Supabase 写入失败', error);
+            });
     } else {
         localStorage.setItem(ROOM_PREFIX + roomId, JSON.stringify(roomData));
         // 通过 BroadcastChannel 通知同浏览器其他标签页（携带完整数据，解决 file:// 下 localStorage 隔离问题）
@@ -64,16 +50,16 @@ function saveRoom(roomId, roomData) {
 }
 
 function getRoom(roomId) {
-    if (useFirebase && db) {
-        return firebaseRoomsCache[roomId] || null;
+    if (useCloud && supabaseClient) {
+        return cloudRoomsCache[roomId] || null;
     }
     const data = localStorage.getItem(ROOM_PREFIX + roomId);
     return data ? JSON.parse(data) : null;
 }
 
 function getAllRooms() {
-    if (useFirebase && db) {
-        return { ...firebaseRoomsCache };
+    if (useCloud && supabaseClient) {
+        return { ...cloudRoomsCache };
     }
     const rooms = {};
     // 先从 localStorage 读取
@@ -99,9 +85,15 @@ function getAllRooms() {
 }
 
 function deleteRoom(roomId) {
-    if (useFirebase && db) {
-        delete firebaseRoomsCache[roomId];
-        db.ref(ROOM_COLLECTION + '/' + roomId).remove().catch(e => console.warn('Firebase 删除失败', e));
+    if (useCloud && supabaseClient) {
+        delete cloudRoomsCache[roomId];
+        supabaseClient
+            .from(ROOM_COLLECTION)
+            .delete()
+            .eq('id', roomId)
+            .then(({ error }) => {
+                if (error) console.warn('Supabase 删除失败', error);
+            });
     } else {
         localStorage.removeItem(ROOM_PREFIX + roomId);
         // 通过 BroadcastChannel 通知同浏览器其他标签页
@@ -118,6 +110,45 @@ function updateRoom(roomId, updates) {
     if (!room) return;
     const newRoom = { ...room, ...updates };
     saveRoom(roomId, newRoom);
+}
+
+// ---------- Supabase 云端同步辅助 ----------
+// 从云端拉取所有房间，写入内存缓存（在本地模式下也合并到 broadcastRoomsCache 兜底）
+function pullRoomsFromCloud() {
+    if (!useCloud || !supabaseClient) return;
+    supabaseClient
+        .from(ROOM_COLLECTION)
+        .select('id, data')
+        .then(({ data, error }) => {
+            if (error) {
+                console.warn('Supabase 拉取房间失败', error);
+                return;
+            }
+            (data || []).forEach(row => {
+                if (row && row.data) cloudRoomsCache[row.id] = row.data;
+            });
+            // 拉取完成后刷新 UI
+            if (app && typeof app.refreshRooms === 'function') {
+                app.refreshRooms();
+            }
+        });
+}
+
+// 订阅云端房间变化，实时同步其他设备的增删改到本地缓存
+function subscribeRoomsFromCloud() {
+    if (!useCloud || !supabaseClient) return;
+    supabaseClient
+        .channel('rooms-sync')
+        .on('postgres_changes', { event: '*', schema: 'public', table: ROOM_COLLECTION }, (payload) => {
+            if (payload.eventType === 'DELETE') {
+                delete cloudRoomsCache[payload.old.id];
+                handleCrossTabUpdate(payload.old.id);
+            } else if (payload.new && payload.new.id && payload.new.data) {
+                cloudRoomsCache[payload.new.id] = payload.new.data;
+                handleCrossTabUpdate(payload.new.id);
+            }
+        })
+        .subscribe();
 }
 
 // ============ BroadcastChannel 跨标签页通信（解决 file:// 下 localStorage 不同步问题） ============
@@ -200,16 +231,8 @@ function handleCrossTabUpdate(roomId) {
 // 立即初始化 BroadcastChannel
 initBroadcastChannel();
 
-// 订阅 Firebase 根节点，实时同步所有房间到本地缓存
-function initFirebaseListener() {
-    if (!useFirebase || !db) return;
-    db.ref(ROOM_COLLECTION).on('value', (snap) => {
-        firebaseRoomsCache = snap.val() || {};
-    });
-}
-
-// 尝试初始化 Firebase（匿名认证成功后自动建立监听）
-initFirebase();
+// 尝试初始化 Supabase（连接成功后自动拉取并订阅房间变化）
+initSupabase();
 
 // 重写 app 中的房间操作方法，使用上述函数
 // ============ 应用状态 ============
