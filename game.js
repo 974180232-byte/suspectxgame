@@ -150,16 +150,18 @@ function pullRoomsFromCloud() {
                 return false;
             }
             const rows = data || [];
+            const seenIds = {};
             let changed = false;
             rows.forEach(row => {
                 if (row && row.data) {
+                    seenIds[row.id] = true;
                     const cloudData = row.data;
                     const localData = cloudRoomsCache[row.id];
-                    // 自动清理：0 人的空房间（创建超过 30 秒，避免误删刚创建尚未加入的房间）
+                    // 自动清理：0 人的空房间（创建超过 5 秒，避免误删刚创建尚未加入的房间）
                     const playersObj = cloudData.players || {};
                     const activeCount = Object.values(playersObj).filter(p => p && p.name).length;
                     const created = cloudData.createdAt || 0;
-                    if (activeCount === 0 && Date.now() - created > 30000) {
+                    if (activeCount === 0 && Date.now() - created > 5000) {
                         deleteRoom(row.id);
                         return;
                     }
@@ -172,10 +174,21 @@ function pullRoomsFromCloud() {
                     }
                 }
             });
-            // 注意：这里【不】清理缓存中云端未返回的房间。
-            // saveRoom 是异步写入，写入完成前云端暂时查不到该房间，
-            // 若此时误判「房间已不存在」并删除缓存，会导致玩家几秒后被踢回大厅。
-            // 房间真正删除走 deleteRoom（显式删除）与 Realtime DELETE 事件。
+            // 清理「云端已不存在」的房间（如房主离开后 0 人删除、deleteRoom 后其他设备同步）。
+            // 加时间保护：仅清理创建超过 30 秒且云端确实没有的房间，
+            // 避免 saveRoom 异步写入延迟时误判刚创建的房间「不存在」而误删。
+            Object.keys(cloudRoomsCache).forEach(id => {
+                if (!seenIds[id]) {
+                    const local = cloudRoomsCache[id];
+                    const created = local && local.createdAt ? local.createdAt : 0;
+                    // 云端确实没有该房间，且创建超过 5 秒 → 视为已删除，清理本地缓存
+                    if (Date.now() - created > 5000) {
+                        delete cloudRoomsCache[id];
+                        changed = true;
+                        handleCrossTabUpdate(id);
+                    }
+                }
+            });
             // 变化时刷新房间列表（大厅显示）
             if (changed && app && typeof app.refreshRooms === 'function') {
                 app.refreshRooms();
