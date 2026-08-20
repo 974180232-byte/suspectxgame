@@ -7,8 +7,15 @@ const SUPABASE_KEY = 'sb_publishable_prdBh_WqbbiZbCXm5nLeBA_ojMhFyo3';
 // ============ 数据库初始化 ============
 let supabaseClient = null;
 let useCloud = false;
+// 当前玩家的匿名身份 UID（用于按房间成员授权）
+let myUid = null;
 // 内存缓存：让 getRoom/getAllRooms 可以同步返回最新数据（Supabase 读取是异步的）
 let cloudRoomsCache = {};
+
+// 同步获取当前匿名 UID（登录完成后可用）；未登录返回 null
+function getMyUid() {
+    return myUid;
+}
 
 // 尝试连接 Supabase；只有 SDK 可用且配置完整才启用，否则回退本地模式。
 function initSupabase() {
@@ -18,10 +25,20 @@ function initSupabase() {
     }
     try {
         supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-        useCloud = true;
-        console.log('✅ Supabase 已连接（支持跨设备联机）');
-        subscribeRoomsFromCloud();     // 订阅房间变化（增强，若 Realtime 可用则实时同步）
-        startCloudSyncLoop();          // 定时轮询云端，作为跨设备同步的可靠兜底
+        // 匿名登录，拿到 UID 后才具备按房间授权的读写权限
+        supabaseClient.auth.signInAnonymously()
+            .then(({ data, error }) => {
+                if (error) {
+                    console.warn('Supabase 匿名登录失败，使用本地模式', error);
+                    useCloud = false;
+                    return;
+                }
+                myUid = data.user ? data.user.id : null;
+                useCloud = true;
+                console.log('✅ Supabase 已连接（匿名认证成功，支持跨设备联机）');
+                subscribeRoomsFromCloud();     // 订阅房间变化（增强，若 Realtime 可用则实时同步）
+                startCloudSyncLoop();          // 定时轮询云端，作为跨设备同步的可靠兜底
+            });
     } catch (e) {
         console.warn('Supabase 初始化失败，使用本地模式', e);
     }
@@ -35,10 +52,12 @@ function saveRoom(roomId, roomData) {
     if (useCloud && supabaseClient) {
         // 同步更新内存缓存，让 getRoom/getAllRooms 立即返回最新数据
         cloudRoomsCache[roomId] = roomData;
+        // members 从房间的 memberUids 取（该房间所有玩家的匿名 UID），供 RLS 按成员授权
+        const members = Array.isArray(roomData.memberUids) ? roomData.memberUids : [];
         // 异步写入 Supabase（id 主键，upsert 覆盖）
         supabaseClient
             .from(ROOM_COLLECTION)
-            .upsert({ id: roomId, data: roomData }, { onConflict: 'id' })
+            .upsert({ id: roomId, data: roomData, members }, { onConflict: 'id' })
             .then(({ error }) => {
                 if (error) console.warn('Supabase 写入失败', error);
             });
@@ -440,13 +459,15 @@ const app = {
     createRoom() {
         if (!this.playerName) return;
         const roomId = 'room_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+        const uid = getMyUid();
         const roomData = {
             name: `${this.playerName} 的房间`,
             status: 'waiting',
             createdBy: this.playerId,
             createdAt: Date.now(),
             players: {},
-            gameData: null
+            gameData: null,
+            memberUids: uid ? [uid] : []
         };
         saveRoom(roomId, roomData);
         this.currentRoomId = roomId;
@@ -490,6 +511,12 @@ const app = {
         };
         room.players = room.players || {};
         room.players[this.playerId] = playerData;
+        // 把当前玩家 UID 加入房间成员，供 RLS 授权
+        const uid = getMyUid();
+        if (uid) {
+            room.memberUids = room.memberUids || [];
+            if (!room.memberUids.includes(uid)) room.memberUids.push(uid);
+        }
         saveRoom(roomId, room);
         this.currentRoomId = roomId;
         this.listenToRoom(roomId);
@@ -588,6 +615,11 @@ const app = {
             if (room) {
                 if (room.players && room.players[this.playerId]) {
                     delete room.players[this.playerId];
+                    // 从房间成员中移除当前 UID
+                    const uid = getMyUid();
+                    if (uid && Array.isArray(room.memberUids)) {
+                        room.memberUids = room.memberUids.filter(m => m !== uid);
+                    }
                     const activePlayers = Object.values(room.players).filter(p => p && p.name);
                     if (activePlayers.length === 0) {
                         deleteRoom(this.currentRoomId);
