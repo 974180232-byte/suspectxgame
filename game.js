@@ -697,6 +697,23 @@ const app = {
         }
         this.renderGame();
 
+        // 确认手牌阶段：所有玩家都确认后，自动传牌进入调查阶段。
+        // 放在统一入口判断，保证在 Supabase 异步同步下，任一方都能拿到全员确认状态后推进。
+        if (gd.phase === 'confirming' && gd.seenHand) {
+            const allSeen = gd.playerIds.every(pid => gd.seenHand[pid]);
+            if (allSeen) {
+                this.passCards(room);
+                // passCards 会保存并改变 phase，重新取最新数据继续渲染
+                const latest = getRoom(this.currentRoomId);
+                if (!latest || !latest.gameData) return;
+                room = latest;
+                gd = latest.gameData;
+                this.currentRoomData = latest;
+                this.gamePhase = gd.phase;
+                this.renderGame();
+            }
+        }
+
         // 结算结果展示后，所有标签页都会通过轮询检测到时间点并协同开启下一轮。
         // 必须先处理自动推进：时间一到就进入新一局（phase 离开 revealing），
         // 避免停留在结算阶段反复弹窗（无限循环）。
@@ -958,12 +975,12 @@ const app = {
         if (!room || !room.gameData) return;
         const gd = room.gameData;
         if (gd.phase !== 'confirming') return;
+        if (gd.seenHand && gd.seenHand[this.playerId]) return; // 已确认过，避免重复
+        gd.seenHand = gd.seenHand || {};
         gd.seenHand[this.playerId] = true;
+        // 只标记并保存；是否全员确认、是否推进由 updateGameFromRoom 统一判断，
+        // 避免在 Supabase 异步同步下因本地缓存未及时拿到他人确认而卡住
         saveRoom(this.currentRoomId, room);
-        const allSeen = gd.playerIds.every(pid => gd.seenHand[pid]);
-        if (allSeen) {
-            this.passCards(room);
-        }
     },
 
     passCards(room) {
