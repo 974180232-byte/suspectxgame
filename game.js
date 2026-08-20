@@ -856,12 +856,11 @@ const app = {
             this.startNextRound();
             return;
         }
-        // 让所有玩家都能看到结算结果（不只有触发结算的那位）。
-        // 用持久化的 gd.resultConfirmed 标记「本局结算弹窗是否已展示」，避免用内存变量导致反复弹出。
+        // 让每个玩家都看到结算结果（不只有触发结算的那位）。
+        // 用「本地内存」标记 _resultShown 防止本设备重复弹出；
+        // 不能用持久化的云端标记，否则其他设备看到已展示过就不显示了。
         if ((gd.phase === 'revealing' || gd.phase === 'gameover') &&
-            gd.resultDetails && !gd.resultConfirmed) {
-            gd.resultConfirmed = true;
-            saveRoom(this.currentRoomId, room);
+            gd.resultDetails && !this._resultShown) {
             this._resultShown = true;
             this.showResultModal(gd, gd.killer, gd.resultDetails, gd.initMarkers, gd.totalWrongMarkers, gd.finalResult);
         }
