@@ -485,9 +485,10 @@ const app = {
             gameData: null,
             password: password
         };
-        saveRoom(roomId, roomData);
         this.currentRoomId = roomId;
-        // 房主直接加入，无需输入口令；传入 roomData 避免读到旧缓存导致「0 人」
+        // 房主直接加入，无需输入口令。
+        // 注意：不要在这里先 saveRoom 0 人的房间，避免「0 人写入」晚于「1 人写入」到达云端覆盖成 0 人。
+        // 直接让 joinRoom 用 roomData 创建并保存含房主的 1 人房间。
         this.joinRoom(roomId, password, roomData);
         this.showToast('房间口令：' + password + '（请分享给朋友）');
     },
