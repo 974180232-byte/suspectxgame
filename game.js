@@ -20,8 +20,8 @@ function initSupabase() {
         supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
         useCloud = true;
         console.log('✅ Supabase 已连接（支持跨设备联机）');
-        pullRoomsFromCloud();          // 拉取远端所有房间到缓存
-        subscribeRoomsFromCloud();     // 订阅房间变化
+        subscribeRoomsFromCloud();     // 订阅房间变化（增强，若 Realtime 可用则实时同步）
+        startCloudSyncLoop();          // 定时轮询云端，作为跨设备同步的可靠兜底
     } catch (e) {
         console.warn('Supabase 初始化失败，使用本地模式', e);
     }
@@ -113,25 +113,65 @@ function updateRoom(roomId, updates) {
 }
 
 // ---------- Supabase 云端同步辅助 ----------
-// 从云端拉取所有房间，写入内存缓存（在本地模式下也合并到 broadcastRoomsCache 兜底）
+// 从云端拉取所有房间，写入内存缓存，并对比差异触发对应房间的界面更新。
+// 返回是否发生过变化（用于大厅刷新判断）
 function pullRoomsFromCloud() {
-    if (!useCloud || !supabaseClient) return;
-    supabaseClient
+    if (!useCloud || !supabaseClient) return Promise.resolve(false);
+    return supabaseClient
         .from(ROOM_COLLECTION)
         .select('id, data')
         .then(({ data, error }) => {
             if (error) {
                 console.warn('Supabase 拉取房间失败', error);
-                return;
+                return false;
             }
-            (data || []).forEach(row => {
-                if (row && row.data) cloudRoomsCache[row.id] = row.data;
+            const rows = data || [];
+            const seenIds = {};
+            let changed = false;
+            rows.forEach(row => {
+                if (row && row.data) {
+                    seenIds[row.id] = true;
+                    // 仅当数据不同或缓存不存在时才更新并触发界面刷新，避免频繁重绘
+                    if (JSON.stringify(cloudRoomsCache[row.id]) !== JSON.stringify(row.data)) {
+                        cloudRoomsCache[row.id] = row.data;
+                        changed = true;
+                        handleCrossTabUpdate(row.id);
+                    }
+                }
             });
-            // 拉取完成后刷新 UI
-            if (app && typeof app.refreshRooms === 'function') {
+            // 清理云端已不存在的房间
+            Object.keys(cloudRoomsCache).forEach(id => {
+                if (!seenIds[id]) {
+                    delete cloudRoomsCache[id];
+                    changed = true;
+                    handleCrossTabUpdate(id);
+                }
+            });
+            // 变化时刷新房间列表（大厅显示）
+            if (changed && app && typeof app.refreshRooms === 'function') {
                 app.refreshRooms();
             }
+            return changed;
         });
+}
+
+// 定时轮询云端，作为跨设备同步的可靠兜底（不依赖 Realtime 是否生效）
+let cloudSyncTimer = null;
+function startCloudSyncLoop() {
+    stopCloudSyncLoop();
+    const tick = () => {
+        if (useCloud && supabaseClient) {
+            pullRoomsFromCloud();
+        }
+        cloudSyncTimer = setTimeout(tick, 1000);
+    };
+    tick();
+}
+function stopCloudSyncLoop() {
+    if (cloudSyncTimer) {
+        clearTimeout(cloudSyncTimer);
+        cloudSyncTimer = null;
+    }
 }
 
 // 订阅云端房间变化，实时同步其他设备的增删改到本地缓存
