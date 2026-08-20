@@ -836,10 +836,20 @@ const app = {
     renderHand(gd) {
         const handDisplay = document.getElementById('hand-card-display');
         const hint = document.getElementById('hand-card-hint');
-        if (this.localHand) {
-            handDisplay.textContent = this.localHand;
-            handDisplay.style.color = this.localHand === 'X' ? 'var(--red)' : '#fff';
-            hint.textContent = this.localOriginalCard ? `原始牌: ${this.localOriginalCard}` : '';
+        // 优先用 localHand；若为空，则直接从 gameData.handCards 读取该玩家手牌，
+        // 避免在 Supabase 异步同步下因 localHand 未及时设置而显示成「?」
+        let card = this.localHand;
+        let original = this.localOriginalCard;
+        if (!card && gd && gd.handCards) {
+            card = gd.handCards[this.playerId];
+        }
+        if (!original && gd && gd.originalCards) {
+            original = gd.originalCards[this.playerId];
+        }
+        if (card) {
+            handDisplay.textContent = card;
+            handDisplay.style.color = card === 'X' ? 'var(--red)' : '#fff';
+            hint.textContent = original ? `原始牌: ${original}` : '';
         } else {
             handDisplay.textContent = '?';
             hint.textContent = '';
