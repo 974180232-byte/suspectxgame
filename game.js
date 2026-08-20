@@ -442,12 +442,12 @@ const app = {
             const activePlayers = Object.values(players).filter(p => p && p.name);
             const playerNames = activePlayers.map(p => p.name).join(', ') || '空';
             return `
-                <div class="room-item" onclick="app.joinRoom('${id}')">
+                <div class="room-item" onclick="app.joinRoomWithCheck('${id}')">
                     <div class="room-info">
                         <span class="room-name">${room.name || '未命名房间'}</span>
                         <span class="room-meta">玩家：${playerNames}</span>
                     </div>
-                    <span style="color:var(--text-dim);font-size:0.9em;">${activePlayers.length}/5</span>
+                    <span style="color:var(--text-dim);font-size:0.9em;">${activePlayers.length}/5 ${room.password ? '🔒' : ''}</span>
                 </div>
             `;
         }).join('');
@@ -456,7 +456,8 @@ const app = {
     createRoom() {
         if (!this.playerName) return;
         const roomId = 'room_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
-        const uid = getMyUid();
+        // 生成房间口令：房主分享给朋友才能加入，防止陌生人进入
+        const password = Math.floor(1000 + Math.random() * 9000).toString();
         const roomData = {
             name: `${this.playerName} 的房间`,
             status: 'waiting',
@@ -464,14 +465,28 @@ const app = {
             createdAt: Date.now(),
             players: {},
             gameData: null,
-            memberUids: uid ? [uid] : []
+            password: password
         };
         saveRoom(roomId, roomData);
         this.currentRoomId = roomId;
-        this.joinRoom(roomId);
+        // 房主直接加入，无需输入口令
+        this.joinRoom(roomId, password);
+        this.showToast('房间口令：' + password + '（请分享给朋友）');
     },
 
-    joinRoom(roomId) {
+    // 从大厅点击房间：先校验口令再加入
+    joinRoomWithCheck(roomId) {
+        const room = getRoom(roomId);
+        if (!room) {
+            this.showToast('房间不存在');
+            return;
+        }
+        const password = prompt('请输入房间口令：');
+        if (password === null) return; // 取消
+        this.joinRoom(roomId, (password || '').trim());
+    },
+
+    joinRoom(roomId, password) {
         if (!this.playerName || !this.playerId) return;
         const room = getRoom(roomId);
         if (!room) {
@@ -480,6 +495,11 @@ const app = {
         }
         if (room.status !== 'waiting') {
             this.showToast('游戏已开始，无法加入');
+            return;
+        }
+        // 口令校验：房主创建时带正确口令加入；其他玩家需输入正确口令
+        if (room.password && room.password !== password) {
+            this.showToast('房间口令错误，无法加入');
             return;
         }
 
@@ -508,12 +528,6 @@ const app = {
         };
         room.players = room.players || {};
         room.players[this.playerId] = playerData;
-        // 把当前玩家 UID 加入房间成员，供 RLS 授权
-        const uid = getMyUid();
-        if (uid) {
-            room.memberUids = room.memberUids || [];
-            if (!room.memberUids.includes(uid)) room.memberUids.push(uid);
-        }
         saveRoom(roomId, room);
         this.currentRoomId = roomId;
         this.listenToRoom(roomId);
@@ -612,11 +626,6 @@ const app = {
             if (room) {
                 if (room.players && room.players[this.playerId]) {
                     delete room.players[this.playerId];
-                    // 从房间成员中移除当前 UID
-                    const uid = getMyUid();
-                    if (uid && Array.isArray(room.memberUids)) {
-                        room.memberUids = room.memberUids.filter(m => m !== uid);
-                    }
                     const activePlayers = Object.values(room.players).filter(p => p && p.name);
                     if (activePlayers.length === 0) {
                         deleteRoom(this.currentRoomId);
