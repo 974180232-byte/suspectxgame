@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>谋杀之谜 - 多人卡牌推理游戏</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app">
+        <!-- 登录界面 -->
+        <div id="login-screen" class="screen">
+            <h1>🕵️ 谋杀之谜</h1>
+            <h2>多人卡牌推理游戏</h2>
+            <input type="text" id="name-input" placeholder="输入你的名字（留空随机生成）" maxlength="20">
+            <button class="btn-primary" onclick="app.login()">进入游戏</button>
+        </div>
+
+        <!-- 大厅界面 -->
+        <div id="lobby-screen" class="screen hidden">
+            <h2>游戏大厅</h2>
+            <p style="text-align:center;color:var(--text-dim);font-size:0.9em;" id="lobby-welcome"></p>
+            <button class="btn-primary" onclick="app.createRoom()">➕ 创建房间</button>
+            <div style="border-top:1px solid #333;margin:4px 0;"></div>
+            <p style="font-weight:600;color:var(--text-dim);">可用房间：</p>
+            <div class="room-list" id="room-list">
+                <p style="color:var(--text-dim);text-align:center;">暂无房间</p>
+            </div>
+            <button class="btn-secondary" onclick="app.refreshRooms()">🔄 刷新</button>
+            <button class="btn-secondary" onclick="app.logout()">退出</button>
+        </div>
+
+        <!-- 房间等待界面 -->
+        <div id="room-screen" class="screen hidden" style="max-width:700px;">
+            <h2 id="room-title">房间</h2>
+            <p style="text-align:center;color:var(--text-dim);font-size:0.9em;" id="room-code-display"></p>
+            <div class="seat-map" id="seat-map"></div>
+            <p style="text-align:center;font-size:0.9em;" id="room-status-text">等待玩家加入...</p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;">
+                <button class="btn-primary" id="btn-start-game" onclick="app.startGame()" disabled>开始游戏</button>
+                <button class="btn-secondary" onclick="app.leaveRoom()">离开房间</button>
+            </div>
+        </div>
+
+        <!-- 游戏界面 -->
+        <div id="game-screen" class="hidden">
+            <div class="game-header">
+                <span class="room-name" id="game-room-name"></span>
+                <span class="status" id="game-status"></span>
+            </div>
+            <div class="players-row" id="game-players"></div>
+            <div class="table-area" id="table-area">
+                <div style="text-align:center;font-size:0.9em;color:var(--text-dim);" id="phase-hint"></div>
+                <div class="middle-cards" id="middle-cards"></div>
+                <div id="revealed-card-area" class="revealed-info hidden"></div>
+                <div id="result-area" class="hidden" style="width:100%;"></div>
+            </div>
+            <div class="hand-area" id="hand-area">
+                <span class="hand-label">🃏 你的手牌</span>
+                <div class="hand-card" id="hand-card-display">?</div>
+                <span class="hand-label" id="hand-card-hint" style="font-size:0.75em;"></span>
+            </div>
+            <div class="action-bar" id="action-bar"></div>
+        </div>
+    </div>
+
+    <!-- 查看牌弹窗 -->
+    <div id="view-modal" class="modal-overlay hidden">
+        <div class="modal">
+            <h3>🔍 查看嫌疑人卡牌</h3>
+            <div class="cards-view" id="view-cards"></div>
+            <p style="text-align:center;color:var(--text-dim);font-size:0.85em;">只有你能看到这些牌</p>
+            <button class="btn-primary" onclick="app.closeViewModal()">关闭</button>
+        </div>
+    </div>
+
+    <!-- 结算弹窗 -->
+    <div id="result-modal" class="modal-overlay hidden">
+        <div class="modal">
+            <h3>🏆 结算阶段</h3>
+            <div id="result-modal-content"></div>
+            <button class="btn-primary" onclick="app.closeResultModal()">确认</button>
+        </div>
+    </div>
+
+    <!-- Firebase SDK（支持跨设备联机；未配置密钥时自动回退到本地模式） -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+    <script src="game.js"></script>
+</body>
+</html>
