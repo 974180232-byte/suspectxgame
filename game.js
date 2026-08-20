@@ -36,8 +36,9 @@ function initSupabase() {
                 myUid = data.user ? data.user.id : null;
                 useCloud = true;
                 console.log('✅ Supabase 已连接（匿名认证成功，支持跨设备联机）');
-                subscribeRoomsFromCloud();     // 订阅房间变化（增强，若 Realtime 可用则实时同步）
-                startCloudSyncLoop();          // 定时轮询云端，作为跨设备同步的可靠兜底
+                // 不使用 Realtime 订阅：其 WebSocket 在部分网络（尤其国内）下连接不稳定，
+                // 会导致实时推送失败并产生大量报错。改用定时轮询（HTTP）作为唯一可靠同步通道。
+                startCloudSyncLoop();          // 定时轮询云端，作为跨设备同步的可靠通道
             });
     } catch (e) {
         console.warn('Supabase 初始化失败，使用本地模式', e);
