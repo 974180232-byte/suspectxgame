@@ -815,6 +815,40 @@ const app = {
             }
         }
 
+        // 调查阶段：统一推进回合——若当前玩家已投票，则轮到下一个未投票玩家；
+        // 若所有人都已投票，则进入结算。放在统一入口，基于云端完整数据判断，避免投票后卡住。
+        if (gd.phase === 'investigating' && gd.hasVoted) {
+            const curSeat = gd.currentPlayerSeat;
+            const curPid = gd.playerBySeat && gd.playerBySeat[curSeat];
+            if (curPid && gd.hasVoted[curPid]) {
+                // 当前玩家已投票，找下一个未投票玩家
+                const seats = gd.seats;
+                const n = seats.length;
+                let nextSeat = -1;
+                for (let i = 1; i <= n; i++) {
+                    const cand = seats[(seats.indexOf(curSeat) + i) % n];
+                    const pid = gd.playerBySeat && gd.playerBySeat[cand];
+                    if (pid && !gd.hasVoted[pid]) { nextSeat = cand; break; }
+                }
+                if (nextSeat !== -1) {
+                    // 还没人全投 → 轮到下一个
+                    if (gd.currentPlayerSeat !== nextSeat) {
+                        gd.currentPlayerSeat = nextSeat;
+                        saveRoom(this.currentRoomId, room);
+                    }
+                } else {
+                    // 所有人都已投票 → 进入结算
+                    this.enterRevealPhase(gd);
+                    const latest2 = getRoom(this.currentRoomId);
+                    if (!latest2 || !latest2.gameData) return;
+                    room = latest2;
+                    gd = latest2.gameData;
+                    this.currentRoomData = latest2;
+                    this.gamePhase = gd.phase;
+                }
+            }
+        }
+
         // 结算结果展示后，所有标签页都会通过轮询检测到时间点并协同开启下一轮。
         // 必须先处理自动推进：时间一到就进入新一局（phase 离开 revealing），
         // 避免停留在结算阶段反复弹窗（无限循环）。
@@ -1261,18 +1295,9 @@ const app = {
         if (!gd.suspectVoters[index]) gd.suspectVoters[index] = [];
         gd.suspectVoters[index].push(this.playerId);
         gd.lastVoterSeat = mySeat;
+        // 只记录投票并保存；「是否轮到下一个 / 是否进入结算」由 updateGameFromRoom 统一判断，
+        // 保证基于云端完整数据推进，避免依赖本地缓存完整性而卡住。
         saveRoom(this.currentRoomId, room);
-        const allVoted = gd.playerIds.every(pid => gd.hasVoted[pid]);
-        if (allVoted) {
-            this.enterRevealPhase(gd);
-        } else {
-            const seats = gd.seats;
-            const n = seats.length;
-            const myIndex = seats.indexOf(mySeat);
-            const nextSeat = seats[(myIndex + 1) % n];
-            gd.currentPlayerSeat = nextSeat;
-            saveRoom(this.currentRoomId, room);
-        }
     },
 
     enterRevealPhase(gd) {
