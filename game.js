@@ -186,6 +186,9 @@ function startCloudSyncLoop() {
     const tick = () => {
         if (useCloud && supabaseClient) {
             pullRoomsFromCloud();
+            // 即使云端数据未变化，也要对当前房间做「结算自动推进」检查，
+            // 否则 autoNextAt 到达后因数据无变化不触发 updateGameFromRoom，会一直卡在结算。
+            tryAutoAdvanceCurrentRoom();
         }
         cloudSyncTimer = setTimeout(tick, 1000);
     };
@@ -196,6 +199,16 @@ function stopCloudSyncLoop() {
         clearTimeout(cloudSyncTimer);
         cloudSyncTimer = null;
     }
+}
+
+// 检查当前房间是否到了「结算后自动开启下一轮」的时间点，到了就推进。
+// 用房间级 version 记录上一次处理的状态，避免重复触发。
+function tryAutoAdvanceCurrentRoom() {
+    if (!app || !app.currentRoomId || !app.currentRoomData) return;
+    const gd = app.currentRoomData.gameData;
+    if (!gd || gd.phase !== 'revealing') return;
+    if (!gd.autoNextAt || Date.now() < gd.autoNextAt) return;
+    app.startNextRound();
 }
 
 // 订阅云端房间变化，实时同步其他设备的增删改到本地缓存
