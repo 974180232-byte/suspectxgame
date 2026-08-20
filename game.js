@@ -145,11 +145,9 @@ function pullRoomsFromCloud() {
                 return false;
             }
             const rows = data || [];
-            const seenIds = {};
             let changed = false;
             rows.forEach(row => {
                 if (row && row.data) {
-                    seenIds[row.id] = true;
                     // 仅当数据不同或缓存不存在时才更新并触发界面刷新，避免频繁重绘
                     if (JSON.stringify(cloudRoomsCache[row.id]) !== JSON.stringify(row.data)) {
                         cloudRoomsCache[row.id] = row.data;
@@ -158,14 +156,10 @@ function pullRoomsFromCloud() {
                     }
                 }
             });
-            // 清理云端已不存在的房间
-            Object.keys(cloudRoomsCache).forEach(id => {
-                if (!seenIds[id]) {
-                    delete cloudRoomsCache[id];
-                    changed = true;
-                    handleCrossTabUpdate(id);
-                }
-            });
+            // 注意：这里【不】清理缓存中云端未返回的房间。
+            // saveRoom 是异步写入，写入完成前云端暂时查不到该房间，
+            // 若此时误判「房间已不存在」并删除缓存，会导致玩家几秒后被踢回大厅。
+            // 房间真正删除走 deleteRoom（显式删除）与 Realtime DELETE 事件。
             // 变化时刷新房间列表（大厅显示）
             if (changed && app && typeof app.refreshRooms === 'function') {
                 app.refreshRooms();
