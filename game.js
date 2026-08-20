@@ -155,6 +155,14 @@ function pullRoomsFromCloud() {
                 if (row && row.data) {
                     const cloudData = row.data;
                     const localData = cloudRoomsCache[row.id];
+                    // 自动清理：0 人的空房间（创建超过 30 秒，避免误删刚创建尚未加入的房间）
+                    const playersObj = cloudData.players || {};
+                    const activeCount = Object.values(playersObj).filter(p => p && p.name).length;
+                    const created = cloudData.createdAt || 0;
+                    if (activeCount === 0 && Date.now() - created > 30000) {
+                        deleteRoom(row.id);
+                        return;
+                    }
                     // 云端是权威数据：只要与本地不同就覆盖本地缓存并触发界面更新。
                     // （不依赖 updatedAt 判断——多设备下时间戳不可靠，会导致无法同步到最新的结算推进状态。）
                     if (JSON.stringify(localData) !== JSON.stringify(cloudData)) {
@@ -856,6 +864,18 @@ const app = {
             this.startNextRound();
             return;
         }
+        // 游戏结束：弹窗展示 5 秒后，清空 gameData 并返回房间等待界面（所有设备统一处理）
+        if (gd.phase === 'gameover' && gd.autoNextAt && Date.now() >= gd.autoNextAt) {
+            const r = getRoom(this.currentRoomId);
+            if (r && r.gameData) {
+                r.status = 'waiting';
+                r.gameData = null;
+                saveRoom(this.currentRoomId, r);
+                this._resultShown = false;
+                document.getElementById('result-modal').classList.add('hidden');
+            }
+            return;
+        }
         // 让每个玩家都看到结算结果（不只有触发结算的那位）。
         // 用「本地内存」标记 _resultShown 防止本设备重复弹出；
         // 不能用持久化的云端标记，否则其他设备看到已展示过就不显示了。
@@ -1360,11 +1380,11 @@ const app = {
         });
 
         if (gameEnded) {
-            // 游戏结束 → 回到房间等待界面
+            // 游戏结束：先保留 gameData 并显示「游戏结束」弹窗 5 秒，让所有玩家都能看到，
+            // 时间到后再由统一逻辑清空 gameData 返回房间，避免某一边立即返回、另一边才看到弹窗。
             gd.phase = 'gameover';
             gd.finalResult = true;
-            room.status = 'waiting';
-            room.gameData = null;
+            gd.autoNextAt = Date.now() + 5000;
             saveRoom(this.currentRoomId, room);
             this._resultShown = true;
             this.showResultModal(gd, killer, resultDetails, initMarkers, totalWrongMarkers, true);
