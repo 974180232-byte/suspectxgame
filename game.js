@@ -49,6 +49,8 @@ const ROOM_PREFIX = 'mm_room_';
 const ROOM_COLLECTION = 'rooms';
 
 function saveRoom(roomId, roomData) {
+    // 防御：roomId 无效时不写入，避免产生「roomId 为 null/undefined」的脏数据
+    if (!roomId || !roomData) return;
     if (useCloud && supabaseClient) {
         // 同步更新内存缓存，让 getRoom/getAllRooms 立即返回最新数据
         cloudRoomsCache[roomId] = roomData;
@@ -423,6 +425,7 @@ const app = {
     renderRoomList(rooms) {
         const container = document.getElementById('room-list');
         const availableRooms = Object.entries(rooms).filter(([id, room]) => {
+            if (!id) return false;                 // 过滤无效 roomId，避免「null 空房间」
             if (!room || room.status !== 'waiting') return false;
             const players = room.players || {};
             const activePlayers = Object.values(players).filter(p => p && p.name);
