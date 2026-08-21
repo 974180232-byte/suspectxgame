@@ -237,15 +237,26 @@ function tryRejoinPendingRoom() {
 }
 
 // 心跳：若玩家在房间中，定期刷新自己的 lastActive，防止被误判为掉线。
-// 为避免频繁写云端，仅在超过心跳间隔时才写入。
+// 关键：必须用 RPC 只更新 lastActive 字段，绝不能 saveRoom 整对象覆盖——
+// 否则会覆盖其他玩家刚写入的数据，导致加入闪退、房间号 null 等回归问题。
 function heartbeatCurrentRoom() {
     if (!app || !app.currentRoomId) return;
     if (Date.now() - lastHeartbeat < HEARTBEAT_INTERVAL) return;
     lastHeartbeat = Date.now();
     const room = getRoom(app.currentRoomId);
     if (!room || !room.players || !room.players[app.playerId]) return;
+    // 本地缓存更新（即时 UI，不写云端避免覆盖）
     room.players[app.playerId].lastActive = Date.now();
-    saveRoom(app.currentRoomId, room);
+    if (useCloud && supabaseClient) {
+        // 云端：用 RPC 只更新该玩家的 lastActive，不覆盖其他数据
+        supabaseClient
+            .rpc('heartbeat', { room_id: app.currentRoomId, player_id: app.playerId })
+            .then(({ error }) => {
+                if (error) console.warn('heartbeat RPC 失败', error);
+            });
+    } else {
+        saveRoom(app.currentRoomId, room);
+    }
 }
 
 // 掉线清理：在轮询到的房间数据中，移除「超过 OFFLINE_TIMEOUT 无活跃」的玩家；
