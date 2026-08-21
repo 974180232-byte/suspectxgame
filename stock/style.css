@@ -171,7 +171,9 @@ input[type="text"]:focus { border-color: var(--gold); }
     cursor: pointer;
     transition: transform 0.2s;
 }
-.market-card:hover { transform: translateY(-4px); }
+.market-card.clickable { cursor: pointer; border-color: var(--gold); }
+.market-card.clickable:hover { transform: translateY(-4px); }
+.market-card:not(.clickable) { cursor: default; }
 .market-card .company-num { font-size: 1.6em; font-weight: 700; padding-top: 8px; }
 .market-card .invest-count { font-size: 0.75em; color: var(--gold); }
 

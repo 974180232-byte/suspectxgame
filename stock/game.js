@@ -606,17 +606,20 @@ const app = {
             return `<span class="stock-chip" style="border-left:4px solid ${COMPANIES_COLORS[idx]};${isMeHolder ? 'outline:2px solid var(--gold);' : ''}">公司${num} 📊 ${holderText}</span>`;
         }).join('');
 
-        // 市场
+        // 市场（我的回合且抽牌阶段时，牌可点击拿取）
         const marketArea = document.getElementById('market-area');
+        const canTakeMarket = isMyTurn && gd.turnStep === 'draw';
         if (gd.market.length === 0) {
             marketArea.innerHTML = '<h3>市场（空）</h3><p style="color:var(--text-dim);">市场暂无卡牌</p>';
         } else {
-            marketArea.innerHTML = '<h3>市场</h3>' + gd.market.map((mc, idx) => `
-                <div class="market-card" onclick="app.actionTakeMarket(${idx})">
+            marketArea.innerHTML = '<h3>市场</h3>' + gd.market.map((mc, idx) => {
+                const isMajorHolder = gd.majorHolder[mc.company] === mySeat;
+                const clickable = canTakeMarket && !isMajorHolder;
+                return `<div class="market-card ${clickable ? 'clickable' : ''}" ${clickable ? `onclick="app.actionTakeMarket(${idx})"` : ''} title="${isMajorHolder ? '你是该公司股东，不能拿' : (canTakeMarket ? '点击拿取' : '等待回合')}">
                     <div class="company-num">${mc.company}</div>
-                    <div class="invest-count">💰${mc.investMoney}</div>
-                </div>
-            `).join('');
+                    <div class="invest-count">💰${mc.investMoney}${isMajorHolder ? '（股东）' : ''}</div>
+                </div>`;
+            }).join('');
         }
 
         // 手牌：所有玩家都能看到自己的手牌；只有轮到自己且已抽牌时才能点击选择
@@ -655,12 +658,11 @@ const app = {
         const actionArea = document.getElementById('action-area');
         if (isMyTurn) {
             if (gd.turnStep === 'draw') {
-                // 抽牌阶段：必须二选一；市场没牌时只能抽牌库
+                // 抽牌阶段：二选一——抽牌库 或 点击市场牌拿取（市场没牌时只能抽牌库）
                 const marketEmpty = !gd.market || gd.market.length === 0;
                 actionArea.innerHTML = `
-                    <div style="width:100%;margin-bottom:6px;color:var(--gold);">① 请先抽一张牌</div>
+                    <div style="width:100%;margin-bottom:6px;color:var(--gold);">① 请先抽一张牌${marketEmpty ? '' : '（点击下方市场牌可直接拿取）'}</div>
                     <button class="action-btn" onclick="app.actionDrawFromDeck()">🃏 从牌库抽牌</button>
-                    ${marketEmpty ? '' : '<button class="action-btn" onclick="app.actionDrawFromMarket()">📊 从市场拿牌</button>'}
                 `;
             } else if (gd.turnStep === 'play') {
                 // 打牌阶段：选一张手牌，再打出/投资
@@ -719,19 +721,20 @@ const app = {
         this.showToast(`抽到公司${card}的牌${cost > 0 ? '，支付市场投资' + cost + '元' : ''}`);
     },
 
-    // ===== 抽牌：从市场明拿 =====
-    actionDrawFromMarket() {
+    // ===== 抽牌：从市场明拿指定的一张牌 =====
+    actionTakeMarket(idx) {
         const room = this.currentRoomData;
         const gd = room.gameData;
         const mySeat = this.getSeatByPid(this.playerId);
-        if (gd.currentPlayerSeat !== mySeat) return;
-        if (gd.market.length === 0) { this.showToast('市场没有牌'); return; }
-        const mc = gd.market[0];
+        if (gd.currentPlayerSeat !== mySeat) { this.showToast('还没轮到你'); return; }
+        if (gd.turnStep !== 'draw') { this.showToast('已抽过牌，请打牌'); return; }
+        if (idx < 0 || idx >= gd.market.length) { this.showToast('请选择一张市场牌'); return; }
+        const mc = gd.market[idx];
         // 大股东限制：不能拿自己是大股东的公司的牌
         if (gd.majorHolder[mc.company] === mySeat) { this.showToast('你是该公司的股东，不能拿'); return; }
         gd.hands[mySeat].push(mc.company);
         this.getSeatPlayer(mySeat).money += mc.investMoney;
-        gd.market.shift();
+        gd.market.splice(idx, 1);
         playSfx('draw');
         this.afterDraw();
         saveRoom(this.currentRoomId, room);
