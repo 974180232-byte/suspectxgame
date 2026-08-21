@@ -793,15 +793,36 @@ const app = {
 
     leaveRoomSilent() {
         if (this.currentRoomId && this.playerId) {
-            const room = getRoom(this.currentRoomId);
-            if (room) {
-                if (room.players && room.players[this.playerId]) {
-                    delete room.players[this.playerId];
-                    const activePlayers = Object.values(room.players).filter(p => p && p.name);
+            // 用 RPC 在数据库层原子移除玩家；若房间已无玩家则删除房间。
+            // 避免多玩家退出时因各自基于过时缓存判断而残留玩家，导致房间不删除。
+            if (useCloud && supabaseClient) {
+                supabaseClient
+                    .rpc('leave_room', { room_id: this.currentRoomId, player_id: this.playerId })
+                    .then(({ error }) => {
+                        if (error) console.warn('leave_room RPC 失败', error);
+                    });
+                // 本地缓存同步：移除自己，若 0 人则删除缓存
+                const localRoom = getRoom(this.currentRoomId);
+                if (localRoom && localRoom.players) {
+                    delete localRoom.players[this.playerId];
+                    const activePlayers = Object.values(localRoom.players).filter(p => p && p.name);
                     if (activePlayers.length === 0) {
-                        deleteRoom(this.currentRoomId);
+                        delete cloudRoomsCache[this.currentRoomId];
                     } else {
-                        saveRoom(this.currentRoomId, room);
+                        cloudRoomsCache[this.currentRoomId] = localRoom;
+                    }
+                }
+            } else {
+                const room = getRoom(this.currentRoomId);
+                if (room) {
+                    if (room.players && room.players[this.playerId]) {
+                        delete room.players[this.playerId];
+                        const activePlayers = Object.values(room.players).filter(p => p && p.name);
+                        if (activePlayers.length === 0) {
+                            deleteRoom(this.currentRoomId);
+                        } else {
+                            saveRoom(this.currentRoomId, room);
+                        }
                     }
                 }
             }
