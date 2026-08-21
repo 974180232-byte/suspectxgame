@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>嫌疑人之绷住</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app">
+        <!-- 连接状态显示（用于诊断：显示当前是 Supabase 还是本地模式） -->
+        <div id="conn-status" style="position:fixed;top:4px;left:50%;transform:translateX(-50%);z-index:9999;padding:3px 10px;border-radius:12px;font-size:12px;color:#fff;background:rgba(0,0,0,0.55);pointer-events:none;"></div>
+        <!-- 夜间模式切换按钮（默认白色页面，点击切换黑白） -->
+        <button id="theme-toggle" onclick="playSfx('click');app.toggleDarkMode()" style="position:fixed;top:4px;right:10px;z-index:9999;padding:5px 12px;border-radius:16px;font-size:12px;border:1px solid var(--border);background:var(--panel);color:var(--text);cursor:pointer;">🌙 夜间</button>
+        <button id="mute-toggle" onclick="app.toggleMute()" style="position:fixed;top:4px;right:96px;z-index:9999;padding:5px 12px;border-radius:16px;font-size:12px;border:1px solid var(--border);background:var(--panel);color:var(--text);cursor:pointer;">🔊</button>
+        <!-- 登录界面 -->
+        <div id="login-screen" class="screen">
+            <h1>🕵️ 嫌疑人之绷住</h1>
+            <h2>多人卡牌推理游戏</h2>
+            <input type="text" id="name-input" placeholder="输入你的名字（留空随机生成）" maxlength="20">
+            <button class="btn-primary" onclick="playSfx('click');app.login()">进入游戏</button>
+        </div>
+
+        <!-- 大厅界面 -->
+        <div id="lobby-screen" class="screen hidden">
+            <h2>游戏大厅</h2>
+            <p style="text-align:center;color:var(--text-dim);font-size:0.9em;" id="lobby-welcome"></p>
+            <button class="btn-primary" onclick="playSfx('click');app.createRoom()">➕ 创建房间</button>
+            <div style="border-top:1px solid #333;margin:4px 0;"></div>
+            <p style="font-weight:600;color:var(--text-dim);">可用房间：</p>
+            <div class="room-list" id="room-list">
+                <p style="color:var(--text-dim);text-align:center;">暂无房间</p>
+            </div>
+            <button class="btn-secondary" onclick="playSfx('click');app.refreshRooms()">🔄 刷新</button>
+            <button class="btn-secondary" onclick="playSfx('click');app.logout()">退出</button>
+        </div>
+
+        <!-- 房间等待界面 -->
+        <div id="room-screen" class="screen hidden" style="max-width:700px;">
+            <h2 id="room-title">房间</h2>
+            <p style="text-align:center;color:var(--text-dim);font-size:0.9em;" id="room-code-display"></p>
+            <div style="text-align:center;margin-bottom:8px;">
+                <button class="btn-secondary" onclick="playSfx('click');app.refreshRoomInfo()" style="font-size:0.85em;padding:6px 14px;">🔄 刷新房间</button>
+            </div>
+            <div class="seat-map" id="seat-map"></div>
+            <p style="text-align:center;font-size:0.9em;" id="room-status-text">等待玩家加入...</p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;">
+                <button class="btn-primary" id="btn-start-game" onclick="playSfx('click');app.startGame()" disabled>开始游戏</button>
+                <button class="btn-secondary" onclick="playSfx('click');app.leaveRoom()">离开房间</button>
+            </div>
+        </div>
+
+        <!-- 游戏界面 -->
+        <div id="game-screen" class="hidden">
+            <div class="game-header">
+                <span class="room-name" id="game-room-name"></span>
+                <span class="status" id="game-status"></span>
+            </div>
+            <div class="players-row" id="game-players"></div>
+            <div class="table-area" id="table-area">
+                <div style="text-align:center;font-size:0.9em;color:var(--text-dim);" id="phase-hint"></div>
+                <div class="middle-cards" id="middle-cards"></div>
+                <div id="revealed-card-area" class="revealed-info hidden"></div>
+                <div id="result-area" class="hidden" style="width:100%;"></div>
+            </div>
+            <div class="hand-area" id="hand-area">
+                <span class="hand-label">🃏 你的手牌</span>
+                <div class="hand-card" id="hand-card-display">?</div>
+                <span class="hand-label" id="hand-card-hint" style="font-size:0.75em;"></span>
+            </div>
+            <div class="action-bar" id="action-bar"></div>
+        </div>
+    </div>
+
+    <!-- 查看牌弹窗 -->
+    <div id="view-modal" class="modal-overlay hidden">
+        <div class="modal">
+            <h3>🔍 查看嫌疑人卡牌</h3>
+            <div class="cards-view" id="view-cards"></div>
+            <p style="text-align:center;color:var(--text-dim);font-size:0.85em;">只有你能看到这些牌</p>
+            <button class="btn-primary" onclick="playSfx('click');app.closeViewModal()">关闭</button>
+        </div>
+    </div>
+
+    <!-- 结算弹窗 -->
+    <div id="result-modal" class="modal-overlay hidden">
+        <div class="modal">
+            <h3>🏆 结算阶段</h3>
+            <div id="result-modal-content"></div>
+            <button class="btn-primary" onclick="app.closeResultModal()">确认</button>
+        </div>
+    </div>
+
+    <!-- Supabase SDK（支持跨设备联机；网络不可用或未配置时自动回退到本地模式） -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="game.js"></script>
+</body>
+</html>

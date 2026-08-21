@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>股票风云 - 多人股市卡牌游戏</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app">
+        <!-- 连接状态 -->
+        <div id="conn-status" style="position:fixed;top:4px;left:50%;transform:translateX(-50%);z-index:9999;padding:3px 10px;border-radius:12px;font-size:12px;color:#fff;background:rgba(0,0,0,0.55);pointer-events:none;"></div>
+
+        <!-- 登录界面 -->
+        <div id="login-screen" class="screen">
+            <div class="panel">
+                <h1>📈 股票风云</h1>
+                <h2>多人股市卡牌游戏</h2>
+                <input type="text" id="name-input" placeholder="输入你的名字" maxlength="12">
+                <button class="btn-primary" onclick="playSfx('click');app.login()">进入游戏</button>
+                <p style="margin-top:12px;color:var(--text-dim);font-size:0.85em;">支持 3-7 人联机</p>
+                <a href="../../index.html" style="display:inline-block;margin-top:14px;color:var(--gold);font-size:0.9em;">← 返回游戏中心</a>
+            </div>
+        </div>
+
+        <!-- 大厅 -->
+        <div id="lobby-screen" class="screen hidden">
+            <div class="panel">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <h2>🏠 游戏大厅</h2>
+                    <div>
+                        <button class="btn-secondary" onclick="playSfx('click');app.logout()">退出</button>
+                    </div>
+                </div>
+                <button class="btn-primary" style="width:100%;margin:12px 0;" onclick="playSfx('click');app.createRoom()">➕ 创建房间</button>
+                <h3 style="margin-top:8px;">房间列表</h3>
+                <div id="room-list" class="room-list"></div>
+            </div>
+        </div>
+
+        <!-- 房间界面 -->
+        <div id="room-screen" class="screen hidden">
+            <div class="panel">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <h2 id="room-title">📋 房间</h2>
+                    <div>
+                        <button class="btn-secondary" onclick="playSfx('click');app.refreshRoomInfo()" style="font-size:0.85em;">🔄 刷新</button>
+                        <button class="btn-secondary" onclick="playSfx('click');app.leaveRoom()">离开</button>
+                    </div>
+                </div>
+                <p id="room-code-display" style="text-align:center;color:var(--text-dim);font-size:0.9em;"></p>
+                <h3>玩家</h3>
+                <div id="room-players"></div>
+                <button class="btn-primary" id="btn-start-game" onclick="playSfx('click');app.startGame()" disabled>开始游戏</button>
+            </div>
+        </div>
+
+        <!-- 游戏界面 -->
+        <div id="game-screen" class="screen hidden">
+            <div class="panel">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <h2>📈 股票风云</h2>
+                    <span id="turn-info" class="turn-info"></span>
+                </div>
+                <div id="money-bar" class="money-bar"></div>
+                <div id="stock-info" class="stock-info"></div>
+                <div id="market-area" class="market-area"></div>
+                <div id="hand-area" class="hand-area"></div>
+                <div id="action-area" class="action-area"></div>
+            </div>
+        </div>
+
+        <!-- 结算弹窗 -->
+        <div id="result-modal" class="modal-overlay hidden">
+            <div class="modal">
+                <h2 id="result-title">📊 结算</h2>
+                <div id="result-content"></div>
+                <button class="btn-primary" onclick="playSfx('click');app.closeResult()">确认</button>
+            </div>
+        </div>
+
+        <!-- 通用提示 -->
+        <div id="toast" class="toast hidden"></div>
+    </div>
+
+    <script src="game.js"></script>
+</body>
+</html>

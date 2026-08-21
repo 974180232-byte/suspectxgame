@@ -1,0 +1,236 @@
+/* 默认主题：白色（浅色）页面 */
+:root {
+    --bg: #f4f5f7;
+    --panel: #ffffff;
+    --card-bg: #e8eaee;
+    --gold: #2b3a67;
+    --text: #222;
+    --text-dim: #777;
+    --red: #d0342c;
+    --green: #2a9d8f;
+    --border: #cfd3d9;
+    --input-bg: #ffffff;
+    --panel-strong: #eef0f3;
+    --card-back: #dfe3e8;
+    --card-back-end: #c4c9d0;
+    --muted: #9aa0a8;
+    --btn-secondary-bg: #dfe3e8;
+    --btn-primary-text: #ffffff;
+    --overlay: rgba(0, 0, 0, 0.5);
+}
+
+/* 夜间模式：黑白切换 */
+body.dark-mode {
+    --bg: #111;
+    --panel: #1b1b1b;
+    --card-bg: #242424;
+    --gold: #e0e0e0;
+    --text: #eee;
+    --text-dim: #aaa;
+    --red: #e63946;
+    --green: #2a9d8f;
+    --border: #333;
+    --input-bg: #222;
+    --panel-strong: #262626;
+    --card-back: #1a1a1a;
+    --card-back-end: #2a2a2a;
+    --muted: #666;
+    --btn-secondary-bg: #333;
+    --btn-primary-text: #111;
+    --overlay: rgba(0, 0, 0, 0.7);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 20px;
+    transition: background 0.3s, color 0.3s;
+}
+
+#app { width: 100%; max-width: 720px; }
+
+.screen { width: 100%; }
+.hidden { display: none !important; }
+
+.panel {
+    background: var(--panel);
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+}
+
+h1 { text-align: center; font-size: 1.8em; margin-bottom: 4px; }
+h2 { text-align: center; margin-bottom: 16px; }
+h3 { margin-bottom: 8px; }
+
+input[type="text"] {
+    width: 100%;
+    padding: 12px 16px;
+    border-radius: 10px;
+    border: 2px solid var(--border);
+    background: var(--input-bg);
+    color: var(--text);
+    font-size: 1em;
+    outline: none;
+    transition: border-color 0.2s;
+}
+input[type="text"]:focus { border-color: var(--gold); }
+
+.btn-primary {
+    background: var(--gold);
+    color: var(--btn-primary-text);
+    border: none;
+    border-radius: 10px;
+    padding: 12px 20px;
+    font-size: 1em;
+    cursor: pointer;
+    transition: opacity 0.2s;
+}
+.btn-primary:hover { opacity: 0.9; }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-secondary {
+    background: var(--btn-secondary-bg);
+    color: var(--text);
+    border: none;
+    border-radius: 10px;
+    padding: 8px 16px;
+    font-size: 0.95em;
+    cursor: pointer;
+    transition: opacity 0.2s;
+}
+.btn-secondary:hover { opacity: 0.85; }
+
+/* 登录界面 */
+#login-screen .panel { text-align: center; }
+#login-screen input { margin: 16px 0; }
+
+/* 房间列表 */
+.room-list { display: flex; flex-direction: column; gap: 8px; }
+.room-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+    background: var(--panel-strong);
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: border-color 0.2s;
+}
+.room-item:hover { border-color: var(--gold); }
+.room-item .room-info { display: flex; flex-direction: column; gap: 2px; }
+.room-name { font-weight: 600; }
+.room-meta { font-size: 0.85em; color: var(--text-dim); }
+
+/* 房间玩家列表 */
+#room-players { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+.player-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background: var(--panel-strong);
+    border-radius: 8px;
+}
+
+/* 游戏界面 */
+.turn-info { font-weight: 600; color: var(--gold); }
+.money-bar { margin: 8px 0; padding: 10px; background: var(--panel-strong); border-radius: 8px; font-weight: 600; }
+
+/* 市场区域（正面朝上的牌） */
+.market-area { margin: 12px 0; }
+.market-card {
+    display: inline-block;
+    width: 64px;
+    height: 92px;
+    margin: 6px;
+    border-radius: 8px;
+    background: var(--card-bg);
+    border: 2px solid var(--border);
+    text-align: center;
+    vertical-align: top;
+    cursor: pointer;
+    transition: transform 0.2s;
+}
+.market-card:hover { transform: translateY(-4px); }
+.market-card .company-num { font-size: 1.6em; font-weight: 700; padding-top: 8px; }
+.market-card .invest-count { font-size: 0.75em; color: var(--gold); }
+
+/* 手牌区域 */
+.hand-area { margin: 12px 0; }
+.hand-card {
+    display: inline-block;
+    width: 68px;
+    height: 96px;
+    margin: 6px;
+    border-radius: 8px;
+    background: var(--card-bg);
+    border: 2px solid var(--border);
+    text-align: center;
+    cursor: pointer;
+    transition: transform 0.2s;
+}
+.hand-card:hover { transform: translateY(-4px); }
+.hand-card .company-num { font-size: 1.8em; font-weight: 700; padding-top: 10px; }
+
+/* 已投资区域 */
+.invested-area { margin: 12px 0; }
+.invested-company { margin: 4px 0; padding: 6px 10px; background: var(--panel-strong); border-radius: 8px; }
+
+/* 操作按钮 */
+.action-area { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+.action-btn {
+    padding: 10px 16px;
+    border-radius: 10px;
+    border: 2px solid var(--border);
+    background: var(--panel-strong);
+    color: var(--text);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.action-btn:hover { border-color: var(--gold); }
+
+/* 弹窗 */
+.modal-overlay {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%;
+    height: 100%;
+    background: var(--overlay);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+.modal {
+    background: var(--panel);
+    border-radius: 16px;
+    padding: 24px;
+    max-width: 420px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+/* Toast */
+.toast {
+    position: fixed;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #333;
+    color: #fff;
+    padding: 10px 20px;
+    border-radius: 20px;
+    font-size: 0.95em;
+    z-index: 2000;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
