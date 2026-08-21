@@ -259,8 +259,10 @@ function pullRoomsFromCloud() {
 // 定时轮询云端，作为跨设备同步的可靠兜底（不依赖 Realtime 是否生效）
 let cloudSyncTimer = null;
 let lastHeartbeat = 0;
+let lastGlobalCleanup = 0;
 const HEARTBEAT_INTERVAL = 10000;   // 每 10 秒刷新一次活跃时间（< 30 秒超时，不会误判）
 const OFFLINE_TIMEOUT = 30000;      // 30 秒无心跳视为掉线
+const GLOBAL_CLEANUP_INTERVAL = 15000; // 每 15 秒调用一次云端全局清理
 
 function startCloudSyncLoop() {
     stopCloudSyncLoop();
@@ -269,6 +271,7 @@ function startCloudSyncLoop() {
             pullRoomsFromCloud();
             heartbeatCurrentRoom();       // 刷新自己在房间中的活跃时间
             checkOfflinePlayers();        // 安全掉线检测：只移除超时玩家，不解散房间，0 人时删除
+            triggerGlobalCleanup();       // 云端全局清理：移除所有房间掉线玩家 / 0 人房间
             // 即使云端数据未变化，也要对当前房间做「结算自动推进」检查，
             // 否则 autoNextAt 到达后因数据无变化不触发 updateGameFromRoom，会一直卡在结算。
             tryAutoAdvanceCurrentRoom();
@@ -277,6 +280,19 @@ function startCloudSyncLoop() {
         cloudSyncTimer = setTimeout(tick, 1000);
     };
     tick();
+}
+
+// 调用云端全局清理 RPC（限频），清理所有房间的掉线玩家与 0 人房间。
+// 这样即使房间内所有设备都关闭，只要还有任一台设备在线（哪怕在大厅）也能清理残留房间。
+function triggerGlobalCleanup() {
+    if (!useCloud || !supabaseClient) return;
+    if (Date.now() - lastGlobalCleanup < GLOBAL_CLEANUP_INTERVAL) return;
+    lastGlobalCleanup = Date.now();
+    supabaseClient
+        .rpc('cleanup_expired_rooms')
+        .then(({ error }) => {
+            if (error) console.warn('cleanup_expired_rooms RPC 失败', error);
+        });
 }
 
 // 处理「刷新/重连」：待重连的房间同步到缓存后，自动回到房间
@@ -799,6 +815,46 @@ const app = {
         };
         checkRoom();
         this.roomListener = setInterval(checkRoom, 500);
+    },
+
+    // 手动刷新房间信息：从云端拉取房间最新数据，更新缓存与界面
+    refreshRoomInfo() {
+        if (!this.currentRoomId) return;
+        const doRefresh = () => {
+            const room = getRoom(this.currentRoomId);
+            if (!room) {
+                this.showToast('房间不存在或已解散');
+                return;
+            }
+            this.currentRoomData = room;
+            this.gamePhase = room.gameData ? room.gameData.phase : 'idle';
+            if (room.status === 'waiting') {
+                this.updateRoomUI();
+            } else if (room.status === 'playing') {
+                this.updateGameFromRoom(room);
+            }
+            this.showToast('已刷新房间信息');
+        };
+        // 云端模式下重新拉取一次最新数据再刷新
+        if (useCloud && supabaseClient) {
+            supabaseClient
+                .from(ROOM_COLLECTION)
+                .select('id, data')
+                .eq('id', this.currentRoomId)
+                .then(({ data, error }) => {
+                    if (error) {
+                        console.warn('刷新房间失败', error);
+                        doRefresh();
+                        return;
+                    }
+                    if (data && data[0] && data[0].data) {
+                        cloudRoomsCache[this.currentRoomId] = data[0].data;
+                    }
+                    doRefresh();
+                });
+        } else {
+            doRefresh();
+        }
     },
 
     updateRoomUI() {

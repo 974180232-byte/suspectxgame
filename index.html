@@ -38,6 +38,9 @@
         <div id="room-screen" class="screen hidden" style="max-width:700px;">
             <h2 id="room-title">房间</h2>
             <p style="text-align:center;color:var(--text-dim);font-size:0.9em;" id="room-code-display"></p>
+            <div style="text-align:center;margin-bottom:8px;">
+                <button class="btn-secondary" onclick="app.refreshRoomInfo()" style="font-size:0.85em;padding:6px 14px;">🔄 刷新房间</button>
+            </div>
             <div class="seat-map" id="seat-map"></div>
             <p style="text-align:center;font-size:0.9em;" id="room-status-text">等待玩家加入...</p>
             <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;">
