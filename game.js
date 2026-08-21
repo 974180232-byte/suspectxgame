@@ -218,21 +218,11 @@ function pullRoomsFromCloud() {
                     }
                 }
             });
-            // 清理「云端已不存在」的房间（如房主离开后 0 人删除、deleteRoom 后其他设备同步）。
-            // 加时间保护：仅清理创建超过 30 秒且云端确实没有的房间，
-            // 避免 saveRoom 异步写入延迟时误判刚创建的房间「不存在」而误删。
-            Object.keys(cloudRoomsCache).forEach(id => {
-                if (!seenIds[id]) {
-                    const local = cloudRoomsCache[id];
-                    const created = local && local.createdAt ? local.createdAt : 0;
-                    // 云端确实没有该房间，且创建超过 5 秒 → 视为已删除，清理本地缓存
-                    if (Date.now() - created > 5000) {
-                        delete cloudRoomsCache[id];
-                        changed = true;
-                        handleCrossTabUpdate(id);
-                    }
-                }
-            });
+            // 注意：这里【不】清理「云端 SELECT 未返回的房间」。
+            // saveRoom 是异步写入，写入完成前云端暂时查不到该房间；
+            // 若此时误判「房间已不存在」并清理缓存、触发 handleCrossTabUpdate，
+            // 会导致玩家被判定「房间已解散」而退回大厅。
+            // 房间真正删除只走显式 deleteRoom / leave_room RPC。
             // 变化时刷新房间列表（大厅显示）
             if (changed && app && typeof app.refreshRooms === 'function') {
                 app.refreshRooms();
