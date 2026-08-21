@@ -1,4 +1,4 @@
-// ============ 股票风云（本地版，后续接入联机） ============
+// ============ 大股东之神秘的9和谁想吃10（本地版，后续接入联机） ============
 
 // ---------- 音效（Web Audio API） ----------
 let _audioCtx = null;
@@ -41,23 +41,66 @@ function playSfx(type) {
     } catch (e) {}
 }
 
-// ---------- 数据层（本地版：localStorage + BroadcastChannel） ----------
+// ---------- 数据层（Supabase 跨设备联机，网络不可用时回退本地模式） ----------
 const ROOM_PREFIX = 'stock_room_';
+const SUPABASE_URL = 'https://thmxdynsofffarecfauw.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_prdBh_WqbbiZbCXm5nLeBA_ojMhFyo3';
+const ROOM_COLLECTION = 'rooms';
+let supabaseClient = null;
+let useCloud = false;
+let cloudRoomsCache = {};
 let broadcastChannel = null;
 let broadcastRoomsCache = {};
 
-// 生成房间
+// 生成房间（用 stock_ 前缀区分于嫌疑人游戏）
 function makeRoomId() { return 'stock_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6); }
 
 function saveRoom(roomId, roomData) {
-    localStorage.setItem(ROOM_PREFIX + roomId, JSON.stringify(roomData));
-    broadcastPost({ type: 'room-data', roomId, roomData });
+    if (!roomId || !roomData) return;
+    roomData.updatedAt = Date.now();
+    if (useCloud && supabaseClient) {
+        cloudRoomsCache[roomId] = roomData;
+        supabaseClient.from(ROOM_COLLECTION)
+            .upsert({ id: roomId, data: roomData }, { onConflict: 'id' })
+            .then(({ error }) => { if (error) console.warn('Supabase 写入失败', error); });
+    } else {
+        localStorage.setItem(ROOM_PREFIX + roomId, JSON.stringify(roomData));
+        broadcastPost({ type: 'room-data', roomId, roomData });
+    }
 }
 function getRoom(roomId) {
+    if (useCloud && supabaseClient) {
+        const cached = cloudRoomsCache[roomId];
+        if (cached) return cached;
+        const localData = localStorage.getItem(ROOM_PREFIX + roomId);
+        if (localData) {
+            const room = JSON.parse(localData);
+            cloudRoomsCache[roomId] = room;
+            return room;
+        }
+        return null;
+    }
     const data = localStorage.getItem(ROOM_PREFIX + roomId);
     return data ? JSON.parse(data) : null;
 }
 function getAllRooms() {
+    if (useCloud && supabaseClient) {
+        const rooms = { ...cloudRoomsCache };
+        // 合并本地房间（处理登录前创建）
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key.startsWith(ROOM_PREFIX)) {
+                const roomId = key.substring(ROOM_PREFIX.length);
+                if (!rooms[roomId]) {
+                    try {
+                        const roomData = JSON.parse(localStorage.getItem(key));
+                        if (roomData) rooms[roomId] = roomData;
+                    } catch (e) {}
+                }
+            }
+        }
+        return rooms;
+    }
     const rooms = {};
     for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
@@ -75,9 +118,101 @@ function getAllRooms() {
     return rooms;
 }
 function deleteRoom(roomId) {
-    localStorage.removeItem(ROOM_PREFIX + roomId);
-    broadcastPost({ type: 'room-deleted', roomId });
-    if (broadcastRoomsCache) delete broadcastRoomsCache[roomId];
+    if (useCloud && supabaseClient) {
+        delete cloudRoomsCache[roomId];
+        supabaseClient.from(ROOM_COLLECTION).delete().eq('id', roomId)
+            .then(({ error }) => { if (error) console.warn('Supabase 删除失败', error); });
+    } else {
+        localStorage.removeItem(ROOM_PREFIX + roomId);
+        broadcastPost({ type: 'room-deleted', roomId });
+        if (broadcastRoomsCache) delete broadcastRoomsCache[roomId];
+    }
+}
+
+// 尝试连接 Supabase（匿名登录，失败回退本地模式）
+function initSupabase() {
+    if (typeof supabase === 'undefined' || !SUPABASE_URL || !SUPABASE_KEY) {
+        updateConnStatus('本地模式（仅同浏览器多标签页）');
+        return;
+    }
+    try {
+        supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        supabaseClient.auth.signInAnonymously()
+            .then(({ error }) => {
+                if (error) { console.warn('Supabase 匿名登录失败，本地模式', error); useCloud = false; updateConnStatus('本地模式（登录失败）'); return; }
+                useCloud = true;
+                console.log('✅ Supabase 已连接（跨设备联机）');
+                updateConnStatus('Supabase 已连接');
+                migrateLocalRoomsToCloud();
+                startCloudSyncLoop();
+            });
+    } catch (e) {
+        console.warn('Supabase 初始化失败，本地模式', e);
+        useCloud = false;
+        updateConnStatus('本地模式（初始化异常）');
+    }
+}
+
+function migrateLocalRoomsToCloud() {
+    if (!useCloud || !supabaseClient) return;
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key.startsWith(ROOM_PREFIX)) {
+            const roomId = key.substring(ROOM_PREFIX.length);
+            try {
+                const roomData = JSON.parse(localStorage.getItem(key));
+                if (roomData && !cloudRoomsCache[roomId]) {
+                    cloudRoomsCache[roomId] = roomData;
+                    supabaseClient.from(ROOM_COLLECTION).upsert({ id: roomId, data: roomData }, { onConflict: 'id' });
+                }
+            } catch (e) {}
+        }
+    }
+}
+
+// 定时轮询云端同步（跨设备）
+let cloudSyncTimer = null;
+function startCloudSyncLoop() {
+    stopCloudSyncLoop();
+    const tick = () => {
+        if (useCloud && supabaseClient) pullRoomsFromCloud();
+        cloudSyncTimer = setTimeout(tick, 1000);
+    };
+    tick();
+}
+function stopCloudSyncLoop() {
+    if (cloudSyncTimer) { clearTimeout(cloudSyncTimer); cloudSyncTimer = null; }
+}
+function pullRoomsFromCloud() {
+    if (!useCloud || !supabaseClient) return;
+    supabaseClient.from(ROOM_COLLECTION)
+        .select('id, data')
+        .then(({ data, error }) => {
+            if (error) return;
+            (data || []).forEach(row => {
+                // 只处理股票游戏自己的房间（id 以 stock_ 开头）
+                if (row && row.data && row.id && row.id.startsWith('stock_')) {
+                    const localData = cloudRoomsCache[row.id];
+                    if (JSON.stringify(localData) !== JSON.stringify(row.data)) {
+                        cloudRoomsCache[row.id] = row.data;
+                        if (app.currentRoomId === row.id) {
+                            app.currentRoomData = row.data;
+                            app.renderCurrentView();
+                        } else {
+                            app.refreshRooms();
+                        }
+                    }
+                }
+            });
+        });
+}
+
+// 连接状态显示
+function updateConnStatus(text, color) {
+    try {
+        const el = document.getElementById('conn-status');
+        if (el) { el.textContent = text; el.style.background = color || 'rgba(0,0,0,0.55)'; }
+    } catch (e) {}
 }
 
 // BroadcastChannel 跨标签页同步（本地模式，同一浏览器多标签页联机）
@@ -105,11 +240,8 @@ function initBroadcastChannel() {
             }
         };
     } catch (e) {
-        // 不支持 BroadcastChannel 时退化为只靠 storage 事件
         window.addEventListener('storage', (e) => {
-            if (e.key && e.key.startsWith(ROOM_PREFIX)) {
-                app.refreshRooms();
-            }
+            if (e.key && e.key.startsWith(ROOM_PREFIX)) app.refreshRooms();
         });
     }
 }
@@ -786,6 +918,7 @@ const app = {
 
 // ---------- 初始化 ----------
 initBroadcastChannel();
+initSupabase();   // 尝试连接 Supabase（跨设备联机），失败回退本地模式
 document.addEventListener('DOMContentLoaded', () => {
     app.showLogin();
     document.getElementById('name-input').addEventListener('keypress', (e) => {

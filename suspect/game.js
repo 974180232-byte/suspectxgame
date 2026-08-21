@@ -312,7 +312,8 @@ function pullRoomsFromCloud() {
             const seenIds = {};
             let changed = false;
             rows.forEach(row => {
-                if (row && row.data) {
+                // 只处理本游戏（嫌疑人）自己的房间，避免把股票游戏（stock_ 前缀）的房间拉进缓存
+                if (row && row.data && row.id && !row.id.startsWith('stock_')) {
                     seenIds[row.id] = true;
                     const cloudData = row.data;
                     const localData = cloudRoomsCache[row.id];

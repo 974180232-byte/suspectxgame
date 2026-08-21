@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>股票风云 - 多人股市卡牌游戏</title>
+    <title>大股东之神秘的9和谁想吃10 - 多人股市卡牌游戏</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -14,7 +14,7 @@
         <!-- 登录界面 -->
         <div id="login-screen" class="screen">
             <div class="panel">
-                <h1>📈 股票风云</h1>
+                <h1>📈 大股东之神秘的9和谁想吃10</h1>
                 <h2>多人股市卡牌游戏</h2>
                 <input type="text" id="name-input" placeholder="输入你的名字" maxlength="12">
                 <button class="btn-primary" onclick="playSfx('click');app.login()">进入游戏</button>
@@ -59,7 +59,7 @@
         <div id="game-screen" class="screen hidden">
             <div class="panel">
                 <div style="display:flex;justify-content:space-between;align-items:center;">
-                    <h2>📈 股票风云</h2>
+                    <h2>📈 大股东之神秘的9和谁想吃10</h2>
                     <span id="turn-info" class="turn-info"></span>
                 </div>
                 <div id="money-bar" class="money-bar"></div>
@@ -85,6 +85,8 @@
         <div id="toast" class="toast hidden"></div>
     </div>
 
+    <!-- Supabase SDK（跨设备联机；网络不可用或未配置时回退本地模式） -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="game.js"></script>
 </body>
 </html>
