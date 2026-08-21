@@ -259,8 +259,8 @@ function pullRoomsFromCloud() {
 // 定时轮询云端，作为跨设备同步的可靠兜底（不依赖 Realtime 是否生效）
 let cloudSyncTimer = null;
 let lastHeartbeat = 0;
-const HEARTBEAT_INTERVAL = 10000;   // 每 10 秒刷新一次活跃时间
-const OFFLINE_TIMEOUT = 300000;     // 300 秒无活跃视为掉线
+const HEARTBEAT_INTERVAL = 10000;   // 每 10 秒刷新一次活跃时间（< 30 秒超时，不会误判）
+const OFFLINE_TIMEOUT = 30000;      // 30 秒无心跳视为掉线
 
 function startCloudSyncLoop() {
     stopCloudSyncLoop();
@@ -268,10 +268,7 @@ function startCloudSyncLoop() {
         if (useCloud && supabaseClient) {
             pullRoomsFromCloud();
             heartbeatCurrentRoom();       // 刷新自己在房间中的活跃时间
-            // 注意：不调用 cleanupOfflinePlayers（掉线清理/房主掉线解散）。
-            // 该逻辑依赖跨设备的活跃时间与时钟，任何一台设备误判（如数据未同步、时钟偏移、
-            // createdBy 与 players 键不一致）都会误解散整个房间，导致所有人被踢。
-            // 为稳定性暂不自动清理/解散。
+            checkOfflinePlayers();        // 安全掉线检测：只移除超时玩家，不解散房间，0 人时删除
             // 即使云端数据未变化，也要对当前房间做「结算自动推进」检查，
             // 否则 autoNextAt 到达后因数据无变化不触发 updateGameFromRoom，会一直卡在结算。
             tryAutoAdvanceCurrentRoom();
@@ -321,41 +318,42 @@ function heartbeatCurrentRoom() {
     }
 }
 
-// 掉线清理：在轮询到的房间数据中，移除「超过 OFFLINE_TIMEOUT 无活跃」的玩家；
-// 若房主掉线，则解散（删除）房间。
-function cleanupOfflinePlayers() {
+// 安全掉线检测：移除「超过 OFFLINE_TIMEOUT 无心跳」的掉线玩家。
+// 绝不主动解散整个房间（避免误判踢人）；玩家被移除后若房间 0 人，由 leave_room RPC 删除。
+// 用 leave_room RPC 原子移除，避免本地缓存整对象覆盖导致竞态。
+function checkOfflinePlayers() {
     if (!app || !useCloud) return;
     const roomId = app.currentRoomId;
     if (!roomId) return;
     const room = getRoom(roomId);
     if (!room || !room.players) return;
     const now = Date.now();
-    let changed = false;
-    // 房主掉线 → 解散房间（仅当明确有房主活跃时间且确实超时才解散；
-    // 数据缺失/未同步时不误判，避免因同步时序把在房间的玩家误当掉线而解散房间）
-    const owner = room.players[room.createdBy];
-    const ownerLast = owner ? (owner.lastActive || owner.joinedAt || 0) : 0;
-    if (owner && ownerLast > 0 && (now - ownerLast > OFFLINE_TIMEOUT)) {
-        deleteRoom(roomId);
-        return;
-    }
-    // 若房主数据缺失（尚未同步到该设备），不做任何解散操作，等待数据同步
-    if (!owner) {
-        return;
-    }
-    // 移除掉线的非房主玩家
+    const offlinePids = [];
     Object.keys(room.players).forEach(pid => {
         const p = room.players[pid];
-        if (pid !== app.playerId && p) {
-            const lastActive = p.lastActive || p.joinedAt || 0;
-            if (now - lastActive > OFFLINE_TIMEOUT) {
-                delete room.players[pid];
-                changed = true;
-            }
+        if (!p) return;
+        const lastActive = p.lastActive || p.joinedAt || 0;
+        // 只有「明确有活跃时间且确实超时」才判掉线；数据缺失/未同步时不判，避免误删
+        if (lastActive > 0 && (now - lastActive > OFFLINE_TIMEOUT)) {
+            offlinePids.push(pid);
         }
     });
-    if (changed) {
-        saveRoom(roomId, room);
+    if (offlinePids.length === 0) return;
+    // 用 leave_room RPC 逐个原子移除掉线玩家；若房间因此 0 人，RPC 会删除房间
+    offlinePids.forEach(pid => {
+        if (useCloud && supabaseClient) {
+            supabaseClient
+                .rpc('leave_room', { room_id: roomId, player_id: pid })
+                .then(({ error }) => { if (error) console.warn('leave_room RPC 失败', error); });
+        }
+        // 本地缓存同步移除
+        if (room.players[pid]) delete room.players[pid];
+    });
+    const remaining = Object.values(room.players).filter(p => p && p.name).length;
+    if (remaining === 0) {
+        delete cloudRoomsCache[roomId];
+    } else {
+        cloudRoomsCache[roomId] = room;
     }
 }
 function stopCloudSyncLoop() {
