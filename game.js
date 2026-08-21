@@ -55,6 +55,38 @@ function playSfx(type) {
     } catch (e) {}
 }
 
+// ============ 结算音频（MP3，随机播放其中一个） ============
+// 每次新增音频文件时，把文件名（含相对路径）加进这个数组即可。
+// 放在 game.js 同级的 sounds 目录下。
+const REVEAL_AUDIO_FILES = [
+    'sounds/35239430934-1-192 - Trim.mp3',
+    'sounds/39753485276-1-192.mp3'
+];
+let _revealAudios = [];
+
+// 预加载所有结算音频
+function initRevealAudios() {
+    _revealAudios = REVEAL_AUDIO_FILES.map(src => {
+        const a = new Audio(src);
+        a.preload = 'auto';
+        return a;
+    });
+}
+
+// 随机播放一个结算音频（无音频时静默返回）
+function playRevealAudio() {
+    if (!_revealAudios.length) return;
+    try {
+        // 先暂停所有，再随机播一个，避免叠加
+        _revealAudios.forEach(a => { try { a.pause(); a.currentTime = 0; } catch (e) {} });
+        const idx = Math.floor(Math.random() * _revealAudios.length);
+        const audio = _revealAudios[idx];
+        audio.currentTime = 0;
+        const p = audio.play();
+        if (p && p.catch) p.catch(() => {});
+    } catch (e) {}
+}
+
 // ============ 数据库初始化 ============
 let supabaseClient = null;
 let useCloud = false;
@@ -1686,7 +1718,7 @@ const app = {
     },
 
     calculateReveal() {
-        playSfx('reveal');
+        playRevealAudio();   // 结算时随机播放一个 MP3
         const room = getRoom(this.currentRoomId);
         if (!room || !room.gameData) return;
         const gd = room.gameData;
@@ -1991,6 +2023,7 @@ const ALL_CARDS = ['2', '3', '4', '5', '6', '7', '8', 'X', 'X'];
 
 // ============ 初始化 ============
 document.addEventListener('DOMContentLoaded', () => {
+    initRevealAudios();  // 预加载结算音频
     // 恢复夜间模式设置（默认白色页面）
     if (localStorage.getItem('mm_dark_mode') === '1') {
         document.body.classList.add('dark-mode');
