@@ -201,14 +201,10 @@ function pullRoomsFromCloud() {
                     seenIds[row.id] = true;
                     const cloudData = row.data;
                     const localData = cloudRoomsCache[row.id];
-                    // 自动清理：0 人的空房间（创建超过 5 秒，避免误删刚创建尚未加入的房间）
-                    const playersObj = cloudData.players || {};
-                    const activeCount = Object.values(playersObj).filter(p => p && p.name).length;
-                    const created = cloudData.createdAt || 0;
-                    if (activeCount === 0 && Date.now() - created > 5000) {
-                        deleteRoom(row.id);
-                        return;
-                    }
+                    // 注意：这里【不】自动清理 0 人房间。
+                    // 0 人房间可能因数据同步/时序导致 players 暂时为空，
+                    // 若自动 deleteRoom 会误删正在使用的房间，触发「房间已解散」。
+                    // 房间删除只走显式 deleteRoom / leave_room RPC。
                     // 云端是权威数据：只要与本地不同就覆盖本地缓存并触发界面更新。
                     // （不依赖 updatedAt 判断——多设备下时间戳不可靠，会导致无法同步到最新的结算推进状态。）
                     if (JSON.stringify(localData) !== JSON.stringify(cloudData)) {
@@ -243,7 +239,10 @@ function startCloudSyncLoop() {
         if (useCloud && supabaseClient) {
             pullRoomsFromCloud();
             heartbeatCurrentRoom();       // 刷新自己在房间中的活跃时间
-            cleanupOfflinePlayers();      // 清理掉线的玩家 / 解散房主掉线的房间
+            // 注意：不调用 cleanupOfflinePlayers（掉线清理/房主掉线解散）。
+            // 该逻辑依赖跨设备的活跃时间与时钟，任何一台设备误判（如数据未同步、时钟偏移、
+            // createdBy 与 players 键不一致）都会误解散整个房间，导致所有人被踢。
+            // 为稳定性暂不自动清理/解散。
             // 即使云端数据未变化，也要对当前房间做「结算自动推进」检查，
             // 否则 autoNextAt 到达后因数据无变化不触发 updateGameFromRoom，会一直卡在结算。
             tryAutoAdvanceCurrentRoom();
