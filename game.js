@@ -17,13 +17,26 @@ function getMyUid() {
     return myUid;
 }
 
+// 更新页面顶部的连接状态显示（用于诊断浏览器兼容问题）
+function updateConnStatus(text, color) {
+    try {
+        const el = document.getElementById('conn-status');
+        if (el) {
+            el.textContent = text;
+            el.style.background = color || 'rgba(0,0,0,0.55)';
+        }
+    } catch (e) {}
+}
+
 // 尝试连接 Supabase；只有 SDK 可用且配置完整才启用，否则回退本地模式。
 function initSupabase() {
     if (typeof supabase === 'undefined' || !SUPABASE_URL || !SUPABASE_KEY) {
         console.log('✅ 本地模式已启动（仅同一浏览器多标签页可联机，配置 Supabase 后支持跨设备）');
+        updateConnStatus('本地模式（仅同浏览器多标签页可联机）', 'rgba(200,100,0,0.7)');
         return;
     }
     try {
+        updateConnStatus('Supabase SDK 加载中...', 'rgba(0,0,0,0.55)');
         supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
         // 匿名登录，拿到 UID 后才具备按房间授权的读写权限
         supabaseClient.auth.signInAnonymously()
@@ -31,11 +44,13 @@ function initSupabase() {
                 if (error) {
                     console.warn('Supabase 匿名登录失败，使用本地模式', error);
                     useCloud = false;
+                    updateConnStatus('本地模式（Supabase 登录失败）', 'rgba(200,100,0,0.7)');
                     return;
                 }
                 myUid = data.user ? data.user.id : null;
                 useCloud = true;
                 console.log('✅ Supabase 已连接（匿名认证成功，支持跨设备联机）');
+                updateConnStatus('Supabase 已连接（支持跨设备）', 'rgba(40,140,40,0.75)');
                 // 迁移登录完成前用 localStorage 创建的房间到云端，避免「创建后读不到/其他设备看不到」
                 migrateLocalRoomsToCloud();
                 // 不使用 Realtime 订阅：其 WebSocket 在部分网络（尤其国内）下连接不稳定，
@@ -44,6 +59,7 @@ function initSupabase() {
             });
     } catch (e) {
         console.warn('Supabase 初始化失败，使用本地模式', e);
+        updateConnStatus('本地模式（Supabase 初始化异常）', 'rgba(200,100,0,0.7)');
     }
 }
 
