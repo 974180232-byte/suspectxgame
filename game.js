@@ -29,6 +29,7 @@ function updateConnStatus(text, color) {
 }
 
 // 尝试连接 Supabase；只有 SDK 可用且配置完整才启用，否则回退本地模式。
+// 匿名登录失败会自动重试，增强对网络波动的健壮性。
 function initSupabase() {
     if (typeof supabase === 'undefined' || !SUPABASE_URL || !SUPABASE_KEY) {
         console.log('✅ 本地模式已启动（仅同一浏览器多标签页可联机，配置 Supabase 后支持跨设备）');
@@ -38,29 +39,41 @@ function initSupabase() {
     try {
         updateConnStatus('Supabase SDK 加载中...', 'rgba(0,0,0,0.55)');
         supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-        // 匿名登录，拿到 UID 后才具备按房间授权的读写权限
-        supabaseClient.auth.signInAnonymously()
-            .then(({ data, error }) => {
-                if (error) {
-                    console.warn('Supabase 匿名登录失败，使用本地模式', error);
-                    useCloud = false;
-                    updateConnStatus('本地模式（Supabase 登录失败）', 'rgba(200,100,0,0.7)');
-                    return;
-                }
-                myUid = data.user ? data.user.id : null;
-                useCloud = true;
-                console.log('✅ Supabase 已连接（匿名认证成功，支持跨设备联机）');
-                updateConnStatus('Supabase 已连接（支持跨设备）', 'rgba(40,140,40,0.75)');
-                // 迁移登录完成前用 localStorage 创建的房间到云端，避免「创建后读不到/其他设备看不到」
-                migrateLocalRoomsToCloud();
-                // 不使用 Realtime 订阅：其 WebSocket 在部分网络（尤其国内）下连接不稳定，
-                // 会导致实时推送失败并产生大量报错。改用定时轮询（HTTP）作为唯一可靠同步通道。
-                startCloudSyncLoop();          // 定时轮询云端，作为跨设备同步的可靠通道
-            });
+        attemptAnonLogin(0);
     } catch (e) {
         console.warn('Supabase 初始化失败，使用本地模式', e);
+        useCloud = false;
         updateConnStatus('本地模式（Supabase 初始化异常）', 'rgba(200,100,0,0.7)');
     }
+}
+
+// 匿名登录，失败时自动重试（最多 5 次，间隔递增，应对网络波动）
+function attemptAnonLogin(attempt) {
+    updateConnStatus(`Supabase 连接中...（第 ${attempt + 1} 次）`, 'rgba(0,0,0,0.55)');
+    supabaseClient.auth.signInAnonymously()
+        .then(({ data, error }) => {
+            if (error) {
+                console.warn('Supabase 匿名登录失败', error);
+                if (attempt < 4) {
+                    const delay = 1000 * (attempt + 1);   // 1s, 2s, 3s, 4s
+                    setTimeout(() => attemptAnonLogin(attempt + 1), delay);
+                } else {
+                    console.warn('Supabase 登录多次失败，使用本地模式');
+                    useCloud = false;
+                    updateConnStatus('本地模式（Supabase 登录失败）', 'rgba(200,100,0,0.7)');
+                }
+                return;
+            }
+            myUid = data.user ? data.user.id : null;
+            useCloud = true;
+            console.log('✅ Supabase 已连接（匿名认证成功，支持跨设备联机）');
+            updateConnStatus('Supabase 已连接（支持跨设备）', 'rgba(40,140,40,0.75)');
+            // 迁移登录完成前用 localStorage 创建的房间到云端，避免「创建后读不到/其他设备看不到」
+            migrateLocalRoomsToCloud();
+            // 不使用 Realtime 订阅：其 WebSocket 在部分网络（尤其国内）下连接不稳定，
+            // 会导致实时推送失败并产生大量报错。改用定时轮询（HTTP）作为唯一可靠同步通道。
+            startCloudSyncLoop();          // 定时轮询云端，作为跨设备同步的可靠通道
+        });
 }
 
 // ============ 数据层（统一接口，支持 Supabase / 本地双后端） ============
@@ -534,6 +547,14 @@ const app = {
             }
         }
         return false;
+    },
+
+    // 夜间模式切换（黑白切换，默认白色页面；状态存 localStorage）
+    toggleDarkMode() {
+        const isDark = document.body.classList.toggle('dark-mode');
+        localStorage.setItem('mm_dark_mode', isDark ? '1' : '0');
+        const btn = document.getElementById('theme-toggle');
+        if (btn) btn.textContent = isDark ? '☀️ 日间' : '🌙 夜间';
     },
 
     logout() {
@@ -1756,7 +1777,7 @@ const app = {
         `;
         details.forEach(d => { html += `<p style="color:var(--text-dim);">${d}</p>`; });
         html += '</div>';
-        html += '<div style="border-top:1px solid #333;margin-top:8px;padding-top:8px;display:flex;flex-direction:column;gap:4px;">';
+        html += '<div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px;display:flex;flex-direction:column;gap:4px;">';
         gd.playerIds.forEach(pid => {
             const p = players[pid];
             if (!p) return;
@@ -1850,6 +1871,12 @@ const ALL_CARDS = ['2', '3', '4', '5', '6', '7', '8', 'X', 'X'];
 
 // ============ 初始化 ============
 document.addEventListener('DOMContentLoaded', () => {
+    // 恢复夜间模式设置（默认白色页面）
+    if (localStorage.getItem('mm_dark_mode') === '1') {
+        document.body.classList.add('dark-mode');
+        const themeBtn = document.getElementById('theme-toggle');
+        if (themeBtn) themeBtn.textContent = '☀️ 日间';
+    }
     // 尝试恢复之前的身份并自动回到房间（刷新/关闭网页后重连）
     const restored = app.restoreSession();
     const savedRoom = localStorage.getItem('mm_current_room');
