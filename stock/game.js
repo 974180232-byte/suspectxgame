@@ -672,9 +672,11 @@ const app = {
                     `;
                 } else {
                     const card = gd.hands[mySeat][this.selectedHandCard];
+                    // 若本轮是从市场拿了该公司的牌，则不能把它打出到市场（只能投资）
+                    const cannotPlay = gd.tookFromMarketCompany === card;
                     actionArea.innerHTML = `
-                        <div style="width:100%;margin-bottom:6px;color:var(--gold);">选中：公司${card} 的牌</div>
-                        <button class="action-btn" onclick="app.actionPlayToMarket()">📤 打出到市场</button>
+                        <div style="width:100%;margin-bottom:6px;color:var(--gold);">选中：公司${card} 的牌${cannotPlay ? '（本轮从市场拿到该公司，不能打出到市场，可投资）' : ''}</div>
+                        ${cannotPlay ? '' : '<button class="action-btn" onclick="app.actionPlayToMarket()">📤 打出到市场</button>'}
                         <button class="action-btn" onclick="app.actionInvest()">🏢 投资到面前</button>
                         <button class="action-btn" onclick="app.selectedHandCard=-1;app.renderGame()">取消</button>
                     `;
@@ -714,6 +716,8 @@ const app = {
         // 抽一张牌
         const card = gd.deck.pop();
         gd.hands[mySeat].push(card);
+        // 从牌库抽牌，本轮不是从市场拿牌，清除限制
+        gd.tookFromMarketCompany = null;
         playSfx('draw');
         this.afterDraw();
         saveRoom(this.currentRoomId, room);
@@ -735,6 +739,8 @@ const app = {
         gd.hands[mySeat].push(mc.company);
         this.getSeatPlayer(mySeat).money += mc.investMoney;
         gd.market.splice(idx, 1);
+        // 记录本轮是从市场拿的哪家公司（该公司的牌本轮不能打出到市场，但可投资）
+        gd.tookFromMarketCompany = mc.company;
         playSfx('draw');
         this.afterDraw();
         saveRoom(this.currentRoomId, room);
@@ -759,6 +765,8 @@ const app = {
         if (gd.turnStep !== 'play') { this.showToast('请先抽牌'); return; }
         if (this.selectedHandCard < 0) { this.showToast('请先选一张手牌'); return; }
         const card = gd.hands[mySeat][this.selectedHandCard];
+        // 规则：若本轮是从市场拿的该公司的牌，不能打出到市场（可投资）
+        if (gd.tookFromMarketCompany === card) { this.showToast('本轮从市场拿到该公司，不能打出到市场'); return; }
         gd.hands[mySeat].splice(this.selectedHandCard, 1);
         gd.market.push({ company: card, investMoney: 0 });
         playSfx('play');
