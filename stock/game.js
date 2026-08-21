@@ -175,13 +175,48 @@ let cloudSyncTimer = null;
 function startCloudSyncLoop() {
     stopCloudSyncLoop();
     const tick = () => {
-        if (useCloud && supabaseClient) pullRoomsFromCloud();
+        if (useCloud && supabaseClient) {
+            pullRoomsFromCloud();
+            heartbeatCurrentRoom();   // 刷新自己在房间中的活跃时间
+            triggerGlobalCleanup();   // 云端全局清理（掉线玩家 / 0 人房间）
+        }
         cloudSyncTimer = setTimeout(tick, 1000);
     };
     tick();
 }
 function stopCloudSyncLoop() {
     if (cloudSyncTimer) { clearTimeout(cloudSyncTimer); cloudSyncTimer = null; }
+}
+
+// 心跳：玩家在房间时，定期用 RPC 更新自己的 lastActive（服务器时间），防止被误判掉线
+let lastHeartbeat = 0;
+const HEARTBEAT_INTERVAL = 10000;      // 每 10 秒刷新一次活跃时间
+const GLOBAL_CLEANUP_INTERVAL = 15000; // 每 15 秒调用一次云端全局清理
+let lastGlobalCleanup = 0;
+
+function heartbeatCurrentRoom() {
+    if (!app || !app.currentRoomId) return;
+    if (Date.now() - lastHeartbeat < HEARTBEAT_INTERVAL) return;
+    lastHeartbeat = Date.now();
+    const room = getRoom(app.currentRoomId);
+    if (!room || !room.players || !room.players[app.playerId]) return;
+    room.players[app.playerId].lastActive = Date.now();   // 本地缓存更新
+    if (useCloud && supabaseClient) {
+        // 用 RPC 在数据库层只更新 lastActive，避免整对象覆盖他人数据
+        supabaseClient.rpc('heartbeat', { room_id: app.currentRoomId, player_id: app.playerId })
+            .then(({ error }) => { if (error) console.warn('heartbeat RPC 失败', error); });
+    } else {
+        saveRoom(app.currentRoomId, room);
+    }
+}
+
+// 调用云端全局清理 RPC（限频）：移除所有房间掉线玩家 / 0 人房间
+function triggerGlobalCleanup() {
+    if (!useCloud || !supabaseClient) return;
+    if (Date.now() - lastGlobalCleanup < GLOBAL_CLEANUP_INTERVAL) return;
+    lastGlobalCleanup = Date.now();
+    supabaseClient.rpc('cleanup_expired_rooms')
+        .then(({ error }) => { if (error) console.warn('cleanup_expired_rooms RPC 失败', error); });
 }
 function pullRoomsFromCloud() {
     if (!useCloud || !supabaseClient) return;
@@ -435,7 +470,9 @@ const app = {
         room.players[this.playerId] = {
             name: this.playerName,
             seat: seat,
-            money: INITIAL_MONEY
+            money: INITIAL_MONEY,
+            joinedAt: Date.now(),
+            lastActive: Date.now()
         };
         saveRoom(roomId, room);
         this.currentRoomId = roomId;
