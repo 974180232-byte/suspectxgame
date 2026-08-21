@@ -1857,7 +1857,7 @@ const app = {
             // 时间到后再由统一逻辑清空 gameData 返回房间，避免某一边立即返回、另一边才看到弹窗。
             gd.phase = 'gameover';
             gd.finalResult = true;
-            gd.autoNextAt = Date.now() + 5000;
+            gd.autoNextAt = Date.now() + 10000;
             saveRoom(this.currentRoomId, room);
             this._resultShown = true;
             this.showResultModal(gd, killer, resultDetails, initMarkers, totalWrongMarkers, true);
@@ -1872,7 +1872,7 @@ const app = {
             // 记录自动开启下一轮的时间点，由所有玩家的轮询统一推进，
             // 避免只依赖单个标签页的 setTimeout（该定时器失效会导致结算阶段无限循环、无法进入下一轮）
             // 结算弹窗保留 5 秒，方便玩家看完结算结果
-            gd.autoNextAt = Date.now() + 5000;
+            gd.autoNextAt = Date.now() + 10000;
             saveRoom(this.currentRoomId, room);
             this._resultShown = true;
             this.showResultModal(gd, killer, resultDetails, initMarkers, totalWrongMarkers, false);
@@ -2005,12 +2005,15 @@ const app = {
 
     // 玩家标识颜色：根据座位号分配，用于区分「谁投了谁」
     getPlayerColor(pid, gd) {
-        const players = (gd && gd.playerBySeat) ? null : (this.currentRoomData?.players || {});
-        const p = players ? players[pid] : null;
+        const players = this.currentRoomData?.players || {};
+        const p = players[pid];
         if (p && p.seat !== undefined) {
             return PLAYER_COLORS[p.seat % PLAYER_COLORS.length];
         }
-        return PLAYER_COLORS[0];
+        // 兜底：若座位未知，尝试用 players 的索引顺序
+        const ids = Object.keys(players);
+        const idx = ids.indexOf(pid);
+        return idx >= 0 ? PLAYER_COLORS[idx % PLAYER_COLORS.length] : PLAYER_COLORS[0];
     },
 
     showResultModal(gd, killer, details, markers, wrongMarkers, gameEnded) {
