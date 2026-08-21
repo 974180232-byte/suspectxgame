@@ -145,6 +145,17 @@ input[type="text"]:focus { border-color: var(--gold); }
 .turn-info { font-weight: 600; color: var(--gold); }
 .money-bar { margin: 8px 0; padding: 10px; background: var(--panel-strong); border-radius: 8px; font-weight: 600; }
 
+/* 大股东信息 */
+.stock-info { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.stock-chip {
+    display: inline-block;
+    padding: 6px 10px;
+    background: var(--panel-strong);
+    border-radius: 8px;
+    font-size: 0.9em;
+    white-space: nowrap;
+}
+
 /* 市场区域（正面朝上的牌） */
 .market-area { margin: 12px 0; }
 .market-card {

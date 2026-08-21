@@ -120,6 +120,8 @@ function broadcastPost(msg) {
 // ---------- 游戏常量 ----------
 // 6家公司：编号5-10，编号=该公司牌数量
 const COMPANIES = [5, 6, 7, 8, 9, 10];
+// 各公司的卡牌颜色（用于区分不同公司的牌）
+const COMPANIES_COLORS = ['#e63946', '#2a9d8f', '#457b9d', '#f4a261', '#9b5de5', '#6d28d9'];
 const TOTAL_CARDS = 45;        // 5+6+7+8+9+10 = 45
 const HAND_SIZE = 3;           // 初始手牌3张
 const INITIAL_MONEY = 10;      // 初始10元
@@ -394,6 +396,7 @@ const app = {
             market: [],             // 市场：{company, investMoney, owner}
             invested: {},           // seat -> { company: count }
             majorHolder: {},        // company -> seat（大股东）
+            turnStep: 'draw',       // 'draw': 需抽牌, 'play': 需打牌
             turnCount: 0,
             history: []
         };
@@ -433,9 +436,12 @@ const app = {
         // 大股东信息
         const stockInfo = document.getElementById('stock-info');
         stockInfo.innerHTML = COMPANIES.map(num => {
-            const holder = gd.majorHolder[num] !== undefined ? this.getSeatPlayer(gd.majorHolder[num]) : null;
-            const isMeHolder = gd.majorHolder[num] === mySeat;
-            return `<span class="stock-chip" style="${isMeHolder ? 'outline:2px solid var(--gold);' : ''}">公司${num} ${holder ? (isMeHolder ? '★你' : holder.name) : '无'}</span>`;
+            const idx = COMPANIES.indexOf(num);
+            const holderSeat = gd.majorHolder[num];
+            const holder = holderSeat !== undefined && holderSeat !== null ? this.getSeatPlayer(holderSeat) : null;
+            const isMeHolder = holderSeat === mySeat;
+            const holderText = holder ? (isMeHolder ? '你 👑' : `👑${holder.name}`) : '无大股东';
+            return `<span class="stock-chip" style="border-left:4px solid ${COMPANIES_COLORS[idx]};${isMeHolder ? 'outline:2px solid var(--gold);' : ''}">公司${num} 📊 ${holderText}</span>`;
         }).join('');
 
         // 市场
@@ -451,17 +457,26 @@ const app = {
             `).join('');
         }
 
-        // 手牌
+        // 手牌：所有玩家都能看到自己的手牌；只有轮到自己且已抽牌时才能点击选择
         const handArea = document.getElementById('hand-area');
         const myHand = gd.hands[mySeat] || [];
-        if (isMyTurn) {
-            handArea.innerHTML = '<h3>你的手牌（点击选择操作）</h3><div style="margin-top:6px;">' +
-                myHand.map((card, idx) => `<div class="hand-card" onclick="app.selectHandCard(${idx})">
+        const canSelect = isMyTurn && gd.turnStep === 'play';
+        const cardColor = (num) => {
+            const idx = COMPANIES.indexOf(num);
+            return COMPANIES_COLORS[idx % COMPANIES_COLORS.length];
+        };
+        if (canSelect) {
+            handArea.innerHTML = '<h3>你的手牌（点击选择要打出/投资的牌）</h3><div style="margin-top:6px;">' +
+                myHand.map((card, idx) => `<div class="hand-card" style="background:${cardColor(card)};" onclick="app.selectHandCard(${idx})">
                     <div class="company-num">${card}</div>
                 </div>`).join('') +
                 '</div>';
         } else {
-            handArea.innerHTML = `<h3>你的手牌（${myHand.length}张，等待回合）</h3>`;
+            handArea.innerHTML = `<h3>你的手牌（${myHand.length}张${isMyTurn ? '，请先抽牌' : '，等待回合'}）</h3><div style="margin-top:6px;">` +
+                myHand.map(card => `<div class="hand-card" style="background:${cardColor(card)};cursor:default;">
+                    <div class="company-num">${card}</div>
+                </div>`).join('') +
+                '</div>';
         }
 
         // 已投资
@@ -472,13 +487,33 @@ const app = {
             ? '<p style="color:var(--text-dim);">暂无投资</p>'
             : Object.entries(invested).map(([company, count]) => `<div class="invested-company">公司${company}：${count}张</div>`).join(''));
 
-        // 操作区
+        // 操作区（严格回合制：先抽牌，再打牌）
         const actionArea = document.getElementById('action-area');
         if (isMyTurn) {
-            actionArea.innerHTML = `
-                <button class="action-btn" onclick="app.actionDrawFromDeck()">🃏 从牌库抽牌</button>
-                <button class="action-btn" onclick="app.actionDrawFromMarket()">📊 从市场拿牌</button>
-            `;
+            if (gd.turnStep === 'draw') {
+                // 抽牌阶段：必须二选一；市场没牌时只能抽牌库
+                const marketEmpty = !gd.market || gd.market.length === 0;
+                actionArea.innerHTML = `
+                    <div style="width:100%;margin-bottom:6px;color:var(--gold);">① 请先抽一张牌</div>
+                    <button class="action-btn" onclick="app.actionDrawFromDeck()">🃏 从牌库抽牌</button>
+                    ${marketEmpty ? '' : '<button class="action-btn" onclick="app.actionDrawFromMarket()">📊 从市场拿牌</button>'}
+                `;
+            } else if (gd.turnStep === 'play') {
+                // 打牌阶段：选一张手牌，再打出/投资
+                if (this.selectedHandCard < 0) {
+                    actionArea.innerHTML = `
+                        <div style="width:100%;margin-bottom:6px;color:var(--gold);">② 请选择一张手牌打出或投资</div>
+                    `;
+                } else {
+                    const card = gd.hands[mySeat][this.selectedHandCard];
+                    actionArea.innerHTML = `
+                        <div style="width:100%;margin-bottom:6px;color:var(--gold);">选中：公司${card} 的牌</div>
+                        <button class="action-btn" onclick="app.actionPlayToMarket()">📤 打出到市场</button>
+                        <button class="action-btn" onclick="app.actionInvest()">🏢 投资到面前</button>
+                        <button class="action-btn" onclick="app.selectedHandCard=-1;app.renderGame()">取消</button>
+                    `;
+                }
+            }
         } else {
             actionArea.innerHTML = '';
         }
@@ -488,16 +523,7 @@ const app = {
     selectedHandCard: -1,
     selectHandCard(idx) {
         this.selectedHandCard = idx;
-        const gd = this.currentRoomData.gameData;
-        const mySeat = this.getSeatByPid(this.playerId);
-        const card = gd.hands[mySeat][idx];
-        const actionArea = document.getElementById('action-area');
-        actionArea.innerHTML = `
-            <div style="width:100%;margin-bottom:6px;color:var(--gold);">选中：公司${card} 的牌</div>
-            <button class="action-btn" onclick="app.actionPlayToMarket()">📤 打出到市场</button>
-            <button class="action-btn" onclick="app.actionInvest()">🏢 投资到面前</button>
-            <button class="action-btn" onclick="app.renderGame()">取消</button>
-        `;
+        this.renderGame();   // 统一由 renderGame 渲染选中状态和操作按钮
     },
 
     // ===== 抽牌：从牌库盲抽 =====
@@ -552,8 +578,9 @@ const app = {
     afterDraw() {
         const room = this.currentRoomData;
         const gd = room.gameData;
-        const mySeat = this.getSeatByPid(this.playerId);
         this.selectedHandCard = -1;
+        // 抽牌完成后进入「打牌」阶段
+        gd.turnStep = 'play';
     },
 
     // ===== 打牌：打出到市场 =====
@@ -562,11 +589,13 @@ const app = {
         const gd = room.gameData;
         const mySeat = this.getSeatByPid(this.playerId);
         if (gd.currentPlayerSeat !== mySeat) return;
+        if (gd.turnStep !== 'play') { this.showToast('请先抽牌'); return; }
         if (this.selectedHandCard < 0) { this.showToast('请先选一张手牌'); return; }
         const card = gd.hands[mySeat][this.selectedHandCard];
         gd.hands[mySeat].splice(this.selectedHandCard, 1);
         gd.market.push({ company: card, investMoney: 0 });
         playSfx('play');
+        this.checkAllMajorHolders();   // 打牌后结算所有公司大股东
         this.endTurn();
         saveRoom(this.currentRoomId, room);
     },
@@ -577,16 +606,37 @@ const app = {
         const gd = room.gameData;
         const mySeat = this.getSeatByPid(this.playerId);
         if (gd.currentPlayerSeat !== mySeat) return;
+        if (gd.turnStep !== 'play') { this.showToast('请先抽牌'); return; }
         if (this.selectedHandCard < 0) { this.showToast('请先选一张手牌'); return; }
         const card = gd.hands[mySeat][this.selectedHandCard];
         gd.hands[mySeat].splice(this.selectedHandCard, 1);
         gd.invested[mySeat] = gd.invested[mySeat] || {};
         gd.invested[mySeat][card] = (gd.invested[mySeat][card] || 0) + 1;
-        // 检查大股东：成为某公司持股最多者时获得筹码
-        this.checkMajorHolder(card);
         playSfx('invest');
+        this.checkAllMajorHolders();   // 打牌后结算所有公司大股东
         this.endTurn();
         saveRoom(this.currentRoomId, room);
+    },
+
+    // 结算所有公司的大股东
+    checkAllMajorHolders() {
+        COMPANIES.forEach(num => {
+            let maxCount = 0, holderSeat = null, tie = false;
+            this.currentRoomData.gameData.seats.forEach(seat => {
+                const count = (this.currentRoomData.gameData.invested[seat] && this.currentRoomData.gameData.invested[seat][num]) || 0;
+                if (count > maxCount) { maxCount = count; holderSeat = seat; tie = false; }
+                else if (count === maxCount && count > 0) { tie = true; }
+            });
+            const prev = this.currentRoomData.gameData.majorHolder[num];
+            // 平手时清空大股东；否则更新
+            const newHolder = (tie || maxCount === 0) ? null : holderSeat;
+            if (prev !== newHolder) {
+                this.currentRoomData.gameData.majorHolder[num] = newHolder;
+                if (newHolder !== null) {
+                    this.showToast(`公司${num}大股东：${this.getSeatPlayer(newHolder).name}`);
+                }
+            }
+        });
     },
 
     // 检查并更新大股东
@@ -621,9 +671,10 @@ const app = {
             this.finalize();
             return;
         }
-        // 轮到下一位（左手边 = 座位号+1）
+        // 轮到下一位（左手边 = 座位号+1），并重置为「抽牌」阶段
         const idx = gd.seats.indexOf(mySeat);
         gd.currentPlayerSeat = gd.seats[(idx + 1) % gd.seats.length];
+        gd.turnStep = 'draw';
     },
 
     // ===== 结算 =====
