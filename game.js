@@ -1739,6 +1739,26 @@ const app = {
     enterRevealPhase(gd) {
         const room = getRoom(this.currentRoomId);
         if (!room) return;
+        // 用 RPC 原子获取「结算计算权」：只有一台设备执行 calculateReveal，
+        // 避免多台设备都进入结算重复计算错误标志物（导致错误标志物翻倍）。
+        if (useCloud && supabaseClient) {
+            supabaseClient
+                .rpc('try_start_reveal', { room_id: this.currentRoomId })
+                .then(({ data, error }) => {
+                    if (error) {
+                        console.warn('try_start_reveal RPC 失败', error);
+                        this.calculateReveal();  // 失败时兜底由本设备计算
+                        return;
+                    }
+                    if (data === true) {
+                        room.gameData.phase = 'revealing';
+                        setTimeout(() => this.calculateReveal(), 800);
+                    }
+                    // 拿不到计算权：等其他设备计算并同步结果
+                });
+            return;
+        }
+        // 本地模式：直接结算
         room.gameData.phase = 'revealing';
         saveRoom(this.currentRoomId, room);
         setTimeout(() => {
