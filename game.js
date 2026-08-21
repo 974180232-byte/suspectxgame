@@ -59,8 +59,7 @@ function playSfx(type) {
 // 每次新增音频文件时，把文件名（含相对路径）加进这个数组即可。
 // 放在 game.js 同级的 sounds 目录下。
 const REVEAL_AUDIO_FILES = [
-    'sounds/1.mp3',
-    'sounds/2.mp3'
+    'sounds/1.mp3'
 ];
 let _revealAudios = [];
 
@@ -73,8 +72,9 @@ function initRevealAudios() {
     });
 }
 
-// 随机播放一个结算音频（无音频时静默返回）
+// 随机播放一个结算音频（无音频或已静音时静默返回）
 function playRevealAudio() {
+    if (!_sfxEnabled) return;
     if (!_revealAudios.length) return;
     try {
         // 先暂停所有，再随机播一个，避免叠加
@@ -665,6 +665,18 @@ const app = {
         if (btn) btn.textContent = isDark ? '☀️ 日间' : '🌙 夜间';
     },
 
+    // 禁音/开启声音切换（状态存 localStorage）
+    toggleMute() {
+        _sfxEnabled = !_sfxEnabled;
+        localStorage.setItem('mm_muted', _sfxEnabled ? '0' : '1');
+        const btn = document.getElementById('mute-toggle');
+        if (btn) btn.textContent = _sfxEnabled ? '🔊' : '🔇';
+        // 若取消静音，暂停当前播放的结算音频
+        if (_sfxEnabled && _revealAudios) {
+            _revealAudios.forEach(a => { try { a.pause(); } catch (e) {} });
+        }
+    },
+
     logout() {
         if (this.currentRoomId && this.mySeat >= 0) {
             this.leaveRoomSilent();
@@ -1181,6 +1193,7 @@ const app = {
         // 进入新回合（非结算阶段），关闭结算弹窗
         if (gd.phase !== 'revealing' && gd.phase !== 'gameover') {
             this._resultShown = false;
+            this._revealPlayed = false;   // 新回合重置，保证下一轮结算能再播放音频
             document.getElementById('result-modal').classList.add('hidden');
         }
 
@@ -1268,6 +1281,11 @@ const app = {
         if ((gd.phase === 'revealing' || gd.phase === 'gameover') &&
             gd.resultDetails && !this._resultShown) {
             this._resultShown = true;
+            // 结算音频：每台设备各自在显示结算弹窗时播放一次（用 _revealPlayed 防同轮重复）
+            if (!this._revealPlayed) {
+                this._revealPlayed = true;
+                playRevealAudio();
+            }
             this.showResultModal(gd, gd.killer, gd.resultDetails, gd.initMarkers, gd.totalWrongMarkers, gd.finalResult);
         }
     },
@@ -1718,7 +1736,6 @@ const app = {
     },
 
     calculateReveal() {
-        playRevealAudio();   // 结算时随机播放一个 MP3
         const room = getRoom(this.currentRoomId);
         if (!room || !room.gameData) return;
         const gd = room.gameData;
@@ -2029,6 +2046,12 @@ document.addEventListener('DOMContentLoaded', () => {
         document.body.classList.add('dark-mode');
         const themeBtn = document.getElementById('theme-toggle');
         if (themeBtn) themeBtn.textContent = '☀️ 日间';
+    }
+    // 恢复禁音设置（默认开启声音）
+    if (localStorage.getItem('mm_muted') === '1') {
+        _sfxEnabled = false;
+        const muteBtn = document.getElementById('mute-toggle');
+        if (muteBtn) muteBtn.textContent = '🔇';
     }
     // 尝试恢复之前的身份并自动回到房间（刷新/关闭网页后重连）
     const restored = app.restoreSession();
