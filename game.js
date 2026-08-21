@@ -4,6 +4,53 @@
 const SUPABASE_URL = 'https://thmxdynsofffarecfauw.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_prdBh_WqbbiZbCXm5nLeBA_ojMhFyo3';
 
+// ============ 音效（Web Audio API，无需音频文件） ============
+let _audioCtx = null;
+let _sfxEnabled = true;
+
+// 获取/创建 AudioContext（首次用户交互后创建，浏览器需要用户手势才允许播放）
+function _getAudioCtx() {
+    if (!_audioCtx) {
+        try {
+            const AC = window.AudioContext || window.webkitAudioContext;
+            if (AC) _audioCtx = new AC();
+        } catch (e) {
+            _audioCtx = null;
+        }
+    }
+    return _audioCtx;
+}
+
+// 播放一个短音（type 控制音高/波形/时长）
+function playSfx(type) {
+    if (!_sfxEnabled) return;
+    const ctx = _getAudioCtx();
+    if (!ctx) return;
+    try {
+        const now = ctx.currentTime;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        let freq = 600, dur = 0.08, wave = 'sine';
+        switch (type) {
+            case 'click':   freq = 800; dur = 0.05; break;   // 点击
+            case 'vote':    freq = 500; dur = 0.12; break;   // 投票
+            case 'confirm': freq = 700; dur = 0.1;  break;   // 确认
+            case 'reveal':  freq = 900; dur = 0.2;  wave = 'triangle'; break; // 结算/揭晓
+            case 'next':    freq = 660; dur = 0.15; break;   // 下一轮/开始
+            case 'error':   freq = 250; dur = 0.2;  wave = 'square'; break;  // 错误/提示
+        }
+        osc.type = wave;
+        osc.frequency.setValueAtTime(freq, now);
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.exponentialRampToValueAtTime(0.25, now + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+        osc.start(now);
+        osc.stop(now + dur + 0.05);
+    } catch (e) {}
+}
+
 // ============ 数据库初始化 ============
 let supabaseClient = null;
 let useCloud = false;
@@ -1437,6 +1484,7 @@ const app = {
 
     // ============ 玩家操作 ============
     confirmHand() {
+        playSfx('confirm');
         if (!this.currentRoomId || !this.playerId) return;
         const room = getRoom(this.currentRoomId);
         if (!room || !room.gameData) return;
@@ -1598,6 +1646,7 @@ const app = {
     },
 
     voteForSuspect(index) {
+        playSfx('vote');
         const room = getRoom(this.currentRoomId);
         if (!room || !room.gameData) return;
         const gd = room.gameData;
@@ -1633,6 +1682,7 @@ const app = {
     },
 
     calculateReveal() {
+        playSfx('reveal');
         const room = getRoom(this.currentRoomId);
         if (!room || !room.gameData) return;
         const gd = room.gameData;
@@ -1730,6 +1780,7 @@ const app = {
 
     // 真正创建下一轮（由获得推进权的设备执行）
     doCreateNextRound() {
+        playSfx('next');
         const room = getRoom(this.currentRoomId);
         if (!room) return;
         // 只在结算阶段触发；phase 离开 revealing 后（下一轮已建立）不再重复推进
