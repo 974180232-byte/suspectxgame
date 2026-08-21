@@ -26,6 +26,10 @@ function playSfx(type) {
     if (!_sfxEnabled) return;
     const ctx = _getAudioCtx();
     if (!ctx) return;
+    // 浏览器自动播放限制：AudioContext 可能处于 suspended，需在用户手势后 resume
+    if (ctx.state === 'suspended') {
+        ctx.resume();
+    }
     try {
         const now = ctx.currentTime;
         const osc = ctx.createOscillator();
