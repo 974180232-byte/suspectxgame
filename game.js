@@ -688,15 +688,21 @@ const app = {
     },
 
     listenToRoom(roomId) {
+        let missingCount = 0;
         const checkRoom = () => {
             const room = getRoom(roomId);
             if (!room) {
+                // 容错：创建房间写入云端是异步的，缓存可能暂时没有该房间。
+                // 若连续多次（约 3 秒）都读不到才判定为解散，避免开房后误退回大厅。
+                missingCount++;
+                if (missingCount < 6) return;
                 this.currentRoomId = null;
                 this.currentRoomData = null;
                 this.showLobby();
                 this.showToast('房间已解散');
                 return;
             }
+            missingCount = 0;
             this.currentRoomData = room;
             if (room.status === 'waiting') {
                 this.showRoom();
