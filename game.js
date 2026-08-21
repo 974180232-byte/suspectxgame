@@ -36,6 +36,8 @@ function initSupabase() {
                 myUid = data.user ? data.user.id : null;
                 useCloud = true;
                 console.log('✅ Supabase 已连接（匿名认证成功，支持跨设备联机）');
+                // 迁移登录完成前用 localStorage 创建的房间到云端，避免「创建后读不到/其他设备看不到」
+                migrateLocalRoomsToCloud();
                 // 不使用 Realtime 订阅：其 WebSocket 在部分网络（尤其国内）下连接不稳定，
                 // 会导致实时推送失败并产生大量报错。改用定时轮询（HTTP）作为唯一可靠同步通道。
                 startCloudSyncLoop();          // 定时轮询云端，作为跨设备同步的可靠通道
@@ -75,7 +77,16 @@ function saveRoom(roomId, roomData) {
 
 function getRoom(roomId) {
     if (useCloud && supabaseClient) {
-        return cloudRoomsCache[roomId] || null;
+        // 优先读缓存；若缓存没有，回退读 localStorage（处理匿名登录完成前创建的房间）
+        const cached = cloudRoomsCache[roomId];
+        if (cached) return cached;
+        const localData = localStorage.getItem(ROOM_PREFIX + roomId);
+        if (localData) {
+            const room = JSON.parse(localData);
+            cloudRoomsCache[roomId] = room; // 同步回缓存
+            return room;
+        }
+        return null;
     }
     const data = localStorage.getItem(ROOM_PREFIX + roomId);
     return data ? JSON.parse(data) : null;
@@ -83,7 +94,21 @@ function getRoom(roomId) {
 
 function getAllRooms() {
     if (useCloud && supabaseClient) {
-        return { ...cloudRoomsCache };
+        const rooms = { ...cloudRoomsCache };
+        // 合并 localStorage 中的房间（处理匿名登录完成前创建的房间，避免创建后列表看不到）
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key.startsWith(ROOM_PREFIX)) {
+                const roomId = key.substring(ROOM_PREFIX.length);
+                if (!rooms[roomId]) {
+                    try {
+                        const roomData = JSON.parse(localStorage.getItem(key));
+                        if (roomData) rooms[roomId] = roomData;
+                    } catch (e) {}
+                }
+            }
+        }
+        return rooms;
     }
     const rooms = {};
     // 先从 localStorage 读取
@@ -137,6 +162,25 @@ function updateRoom(roomId, updates) {
 }
 
 // ---------- Supabase 云端同步辅助 ----------
+// 把登录完成前用 localStorage 创建的房间迁移到云端，确保跨设备可见、缓存一致
+function migrateLocalRoomsToCloud() {
+    if (!useCloud || !supabaseClient) return;
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key.startsWith(ROOM_PREFIX)) {
+            const roomId = key.substring(ROOM_PREFIX.length);
+            try {
+                const roomData = JSON.parse(localStorage.getItem(key));
+                if (roomData && !cloudRoomsCache[roomId]) {
+                    cloudRoomsCache[roomId] = roomData;
+                    const members = Array.isArray(roomData.memberUids) ? roomData.memberUids : [];
+                    supabaseClient.from(ROOM_COLLECTION).upsert({ id: roomId, data: roomData, members }, { onConflict: 'id' });
+                }
+            } catch (e) {}
+        }
+    }
+}
+
 // 从云端拉取所有房间，写入内存缓存，并对比差异触发对应房间的界面更新。
 // 返回是否发生过变化（用于大厅刷新判断）
 function pullRoomsFromCloud() {
