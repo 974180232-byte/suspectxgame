@@ -4,6 +4,9 @@
 const SUPABASE_URL = 'https://thmxdynsofffarecfauw.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_prdBh_WqbbiZbCXm5nLeBA_ojMhFyo3';
 
+// 玩家标识颜色（按座位分配，用于区分不同玩家的投票标记）
+const PLAYER_COLORS = ['#e63946', '#2a9d8f', '#457b9d', '#f4a261', '#9b5de5'];
+
 // ============ 音效（Web Audio API，无需音频文件） ============
 let _audioCtx = null;
 let _sfxEnabled = true;
@@ -494,7 +497,10 @@ function tryAutoAdvanceCurrentRoom() {
     if (!app || !app.currentRoomId || !app.currentRoomData) return;
     const gd = app.currentRoomData.gameData;
     if (!gd || gd.phase !== 'revealing') return;
-    if (!gd.autoNextAt || Date.now() < gd.autoNextAt) return;
+    // 推进条件：所有玩家都已确认结算，或达到 autoNextAt 超时（5 秒）兜底
+    const allConfirmed = gd.playerIds && gd.playerIds.every(pid => gd.confirmedResult && gd.confirmedResult[pid]);
+    const timedOut = gd.autoNextAt && Date.now() >= gd.autoNextAt;
+    if (!allConfirmed && !timedOut) return;
     app.startNextRound();
 }
 
@@ -1329,6 +1335,12 @@ const app = {
         const container = document.getElementById('game-players');
         const players = this.currentRoomData.players || {};
         const sortedSeats = [...gd.seats].sort((a, b) => a - b);
+        const n = sortedSeats.length;
+        // 上下家：下家（左手边，收你的牌）= 座位号+1；上家（给你牌）= 座位号-1
+        const mySeat = this.mySeat;
+        const myIndex = sortedSeats.indexOf(mySeat);
+        const downSeat = sortedSeats[(myIndex + 1) % n];   // 下家
+        const upSeat = sortedSeats[(myIndex - 1 + n) % n]; // 上家
         container.innerHTML = sortedSeats.map(seat => {
             const playerId = gd.playerBySeat[seat];
             const player = players[playerId];
@@ -1338,12 +1350,20 @@ const app = {
             const hasVoted = gd.hasVoted && gd.hasVoted[playerId];
             const markers = gd.initMarkers && gd.initMarkers[playerId] !== undefined ? gd.initMarkers[playerId] : (player.markers || 6);
             const wrongMarkers = gd.totalWrongMarkers && gd.totalWrongMarkers[playerId] !== undefined ? gd.totalWrongMarkers[playerId] : 0;
+            // 上下家标注：只对「我」显示上下家是谁，方便知道牌换给谁
+            let neighbor = '';
+            if (isMe) {
+                const upName = gd.playerBySeat[upSeat] ? players[gd.playerBySeat[upSeat]]?.name : '?';
+                const downName = gd.playerBySeat[downSeat] ? players[gd.playerBySeat[downSeat]]?.name : '?';
+                neighbor = `<div class="neighbor-info">上家:${upName} ← → 下家:${downName}</div>`;
+            }
             return `
                 <div class="player-chip ${isActive ? 'active' : ''} ${hasVoted ? 'voted' : ''}">
-                    <span class="dot ${player.connected ? 'online' : ''}"></span>
+                    <span class="dot ${player.connected ? 'online' : ''}" style="background:${this.getPlayerColor(playerId, gd)}"></span>
                     <span>${isMe ? '你' : ''}${player.name} #${seat+1}</span>
                     <span class="markers">🔵${markers} <span class="wrong-markers">🔴${wrongMarkers}</span></span>
                     ${hasVoted ? '✅' : ''}
+                    ${neighbor}
                 </div>
             `;
         }).join('');
@@ -1373,7 +1393,9 @@ const app = {
                         ${isRevealed ? card : ''}
                     </div>
                     <div class="vote-markers">
-                        ${Array(voteCount).fill(0).map((_, vi) => `<span class="vote-marker">${vi+1}</span>`).join('')}
+                        ${(gd.suspectVoters && gd.suspectVoters[index] ? [...new Set(gd.suspectVoters[index])] : []).map(pid =>
+                            `<span class="vote-marker" style="background:${this.getPlayerColor(pid, gd)}" title="${this.getPlayerName(pid, gd)}"></span>`
+                        ).join('')}
                     </div>
                 </div>
             `;
@@ -1729,7 +1751,11 @@ const app = {
         gd.turnCount = (gd.turnCount || 0) + 1;
         gd.voteLog.push({ seat: mySeat, suspectIndex: index });
         if (!gd.suspectVoters[index]) gd.suspectVoters[index] = [];
-        gd.suspectVoters[index].push(this.playerId);
+        // 去重：避免多设备同时触发 voteForSuspect 时把同一玩家重复 push 进 suspectVoters，
+        // 导致结算时投票人数虚高（错误标志物算多）。
+        if (!gd.suspectVoters[index].includes(this.playerId)) {
+            gd.suspectVoters[index].push(this.playerId);
+        }
         gd.lastVoterSeat = mySeat;
         // 只记录投票并保存；「是否轮到下一个 / 是否进入结算」由 updateGameFromRoom 统一判断，
         // 保证基于云端完整数据推进，避免依赖本地缓存完整性而卡住。
@@ -1783,20 +1809,30 @@ const app = {
         });
         const resultDetails = [];
 
+        // 从后向前结算：对每个非凶手嫌疑人，只有最后一个投票者获得该嫌疑人上所有（去重后）的错误标志物。
+        // 先统一构建去重后的投票者列表（顺序即投票先后，最后元素为最后投票者）。
+        const suspectVoterLists = {};
+        suspects.forEach((_, index) => {
+            suspectVoterLists[index] = [...new Set(suspectVoters[index] || [])];
+        });
         suspects.forEach((suspect, index) => {
-            const votersOnThis = suspectVoters[index] || [];
+            const votersOnThis = suspectVoterLists[index];
             const isKiller = (suspect === killer);
             if (isKiller) {
+                // 投中凶手：标志物弃掉
                 votersOnThis.forEach(pid => {
                     initMarkers[pid] = Math.max(0, initMarkers[pid] - 1);
-                    resultDetails.push(`${pid} 投中凶手，标志物弃掉`);
+                    resultDetails.push(`${this.getPlayerName(pid, gd)} 投中凶手，标志物弃掉`);
                 });
             } else if (votersOnThis.length > 0) {
+                // 非凶手：最后一个投票者获得该嫌疑人上所有（去重后）的错误标志物
                 const lastVoter = votersOnThis[votersOnThis.length - 1];
                 const totalWrong = votersOnThis.length;
+                // 所有投错的人各自扣 1 个初始标志物
                 votersOnThis.forEach(pid => {
                     initMarkers[pid] = Math.max(0, initMarkers[pid] - 1);
                 });
+                // 错误标志物只给最后一个投票者
                 totalWrongMarkers[lastVoter] = (totalWrongMarkers[lastVoter] || 0) + totalWrong;
                 resultDetails.push(
                     `嫌疑人${['A','B','C'][index]}(${suspect})错误，${votersOnThis.map(p => this.getPlayerName(p, gd)).join(', ')}投票，最后投票者${this.getPlayerName(lastVoter, gd)}获得${totalWrong}个错误标志物`
@@ -1831,6 +1867,8 @@ const app = {
             gd.finalResult = false;
             // 标记本局结算弹窗已展示，防止轮询因内存状态变化而反复弹出
             gd.resultConfirmed = true;
+            // 记录每个玩家的「已确认结算」状态；所有玩家确认或超时后才开启下一轮
+            gd.confirmedResult = {};
             // 记录自动开启下一轮的时间点，由所有玩家的轮询统一推进，
             // 避免只依赖单个标签页的 setTimeout（该定时器失效会导致结算阶段无限循环、无法进入下一轮）
             // 结算弹窗保留 5 秒，方便玩家看完结算结果
@@ -1965,6 +2003,16 @@ const app = {
         return players[pid]?.name || pid;
     },
 
+    // 玩家标识颜色：根据座位号分配，用于区分「谁投了谁」
+    getPlayerColor(pid, gd) {
+        const players = (gd && gd.playerBySeat) ? null : (this.currentRoomData?.players || {});
+        const p = players ? players[pid] : null;
+        if (p && p.seat !== undefined) {
+            return PLAYER_COLORS[p.seat % PLAYER_COLORS.length];
+        }
+        return PLAYER_COLORS[0];
+    },
+
     showResultModal(gd, killer, details, markers, wrongMarkers, gameEnded) {
         const modal = document.getElementById('result-modal');
         const content = document.getElementById('result-modal-content');
@@ -2011,9 +2059,18 @@ const app = {
             return;
         }
         if (gd.phase === 'revealing') {
-            // 结算阶段：点确认后立即推进到下一轮（phase 变为新回合，轮询便不再重复弹窗）。
-            // 由于 gd.resultConfirmed 已持久化为 true，即使推进失败也不会被轮询重新弹出。
-            this.startNextRound();
+            // 结算阶段：点「确认」只记录本玩家已确认（用 RPC 云端原子记录），
+            // 不立即推进。当所有玩家都确认 或 5 秒超时后，才由 tryAutoAdvanceCurrentRoom 开启下一轮，
+            // 保证每位玩家都能看清结算弹窗。
+            if (useCloud && supabaseClient) {
+                supabaseClient
+                    .rpc('confirm_result', { room_id: this.currentRoomId, player_id: this.playerId })
+                    .then(({ error }) => { if (error) console.warn('confirm_result RPC 失败', error); });
+                // 本地缓存也记录，便于本地判断
+                if (gd.confirmedResult) gd.confirmedResult[this.playerId] = true;
+            } else {
+                this.startNextRound();
+            }
         }
     },
 
