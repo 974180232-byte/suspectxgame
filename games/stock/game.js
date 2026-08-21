@@ -630,6 +630,7 @@ const app = {
         this.checkAllMajorHolders();   // 打牌后结算所有公司大股东
         this.endTurn();
         saveRoom(this.currentRoomId, room);
+        this.renderGame();   // 立即刷新界面，让操作即时生效
     },
 
     // ===== 打牌：投资到面前 =====
@@ -648,6 +649,7 @@ const app = {
         this.checkAllMajorHolders();   // 打牌后结算所有公司大股东
         this.endTurn();
         saveRoom(this.currentRoomId, room);
+        this.renderGame();   // 立即刷新界面，让操作即时生效
     },
 
     // 结算所有公司的大股东
