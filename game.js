@@ -260,8 +260,8 @@ function pullRoomsFromCloud() {
 let cloudSyncTimer = null;
 let lastHeartbeat = 0;
 let lastGlobalCleanup = 0;
-const HEARTBEAT_INTERVAL = 10000;   // 每 10 秒刷新一次活跃时间（< 30 秒超时，不会误判）
-const OFFLINE_TIMEOUT = 30000;      // 30 秒无心跳视为掉线
+const HEARTBEAT_INTERVAL = 10000;   // 每 10 秒刷新一次活跃时间（< 60 秒超时，不会误判）
+const OFFLINE_TIMEOUT = 60000;      // 60 秒无心跳视为掉线（服务器 RPC 内同值）
 const GLOBAL_CLEANUP_INTERVAL = 15000; // 每 15 秒调用一次云端全局清理
 
 function startCloudSyncLoop() {
@@ -270,7 +270,8 @@ function startCloudSyncLoop() {
         if (useCloud && supabaseClient) {
             pullRoomsFromCloud();
             heartbeatCurrentRoom();       // 刷新自己在房间中的活跃时间
-            checkOfflinePlayers();        // 安全掉线检测：只移除超时玩家，不解散房间，0 人时删除
+            // 掉线清理统一由云端 RPC cleanup_expired_rooms 完成（服务器时间判断，无客户端时钟偏移误判）。
+            // 不使用前端本地 checkOfflinePlayers，避免客户端时间与服务器时间不一致导致误删。
             triggerGlobalCleanup();       // 云端全局清理：移除所有房间掉线玩家 / 0 人房间
             // 即使云端数据未变化，也要对当前房间做「结算自动推进」检查，
             // 否则 autoNextAt 到达后因数据无变化不触发 updateGameFromRoom，会一直卡在结算。
