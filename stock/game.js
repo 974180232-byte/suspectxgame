@@ -842,6 +842,8 @@ const app = {
         const mySeat = this.getSeatByPid(this.playerId);
         gd.turnCount++;
         this.selectedHandCard = -1;
+        // 回合结束，清除「从市场拿牌」的限制（仅限当前回合，不影响下一位玩家）
+        gd.tookFromMarketCompany = null;
         // 检查牌库是否抽完 → 结算
         if (gd.deck.length === 0) {
             // 最后一张牌抽完后，当前玩家打完牌 → 结算
