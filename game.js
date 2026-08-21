@@ -370,6 +370,7 @@ function startCloudSyncLoop() {
             // 否则 autoNextAt 到达后因数据无变化不触发 updateGameFromRoom，会一直卡在结算。
             tryAutoAdvanceCurrentRoom();
             tryRejoinPendingRoom();      // 若有待重连的房间且已同步到缓存，则自动回到房间
+            tryPlayRevealAudio();        // 结算音频：每台设备各自检查并播放一次（不依赖数据变化时序）
         }
         cloudSyncTimer = setTimeout(tick, 1000);
     };
@@ -470,6 +471,20 @@ function stopCloudSyncLoop() {
     if (cloudSyncTimer) {
         clearTimeout(cloudSyncTimer);
         cloudSyncTimer = null;
+    }
+}
+
+// 结算音频：每台设备在轮询中各自检查当前房间，若处于结算阶段且本设备未播放过则播放一次。
+// 不依赖「数据变化」时序（那会导致部分设备因没赶上数据变化而不播放）。
+function tryPlayRevealAudio() {
+    if (!app || !app.currentRoomId) return;
+    if (app._revealPlayed) return;
+    const room = getRoom(app.currentRoomId);
+    if (!room || !room.gameData) return;
+    const gd = room.gameData;
+    if ((gd.phase === 'revealing' || gd.phase === 'gameover') && gd.resultDetails) {
+        app._revealPlayed = true;
+        playRevealAudio();
     }
 }
 
@@ -1281,11 +1296,7 @@ const app = {
         if ((gd.phase === 'revealing' || gd.phase === 'gameover') &&
             gd.resultDetails && !this._resultShown) {
             this._resultShown = true;
-            // 结算音频：每台设备各自在显示结算弹窗时播放一次（用 _revealPlayed 防同轮重复）
-            if (!this._revealPlayed) {
-                this._revealPlayed = true;
-                playRevealAudio();
-            }
+            // 结算音频统一由 tryPlayRevealAudio（轮询）播放，这里不重复播放
             this.showResultModal(gd, gd.killer, gd.resultDetails, gd.initMarkers, gd.totalWrongMarkers, gd.finalResult);
         }
     },
