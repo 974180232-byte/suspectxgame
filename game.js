@@ -59,8 +59,8 @@ function playSfx(type) {
 // 每次新增音频文件时，把文件名（含相对路径）加进这个数组即可。
 // 放在 game.js 同级的 sounds 目录下。
 const REVEAL_AUDIO_FILES = [
-    'sounds/35239430934-1-192 - Trim.mp3',
-    'sounds/39753485276-1-192.mp3'
+    'sounds/1.mp3',
+    'sounds/2.mp3'
 ];
 let _revealAudios = [];
 
