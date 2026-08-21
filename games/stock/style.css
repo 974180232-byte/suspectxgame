@@ -193,8 +193,39 @@ input[type="text"]:focus { border-color: var(--gold); }
 .hand-card .company-num { font-size: 1.8em; font-weight: 700; padding-top: 10px; }
 
 /* 已投资区域 */
-.invested-area { margin: 12px 0; }
-.invested-company { margin: 4px 0; padding: 6px 10px; background: var(--panel-strong); border-radius: 8px; }
+.invest-others { margin: 12px 0; }
+.invest-area { margin: 12px 0; }
+.invest-card {
+    margin: 8px 0;
+    padding: 8px 12px;
+    background: var(--panel-strong);
+    border-radius: 8px;
+    border: 1px solid var(--border);
+}
+.invest-card.me { border-color: var(--gold); }
+.invest-header { font-weight: 700; margin-bottom: 6px; }
+.invest-body { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.inv-chip {
+    display: inline-block;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    color: #fff;
+    text-align: center;
+    line-height: 28px;
+    font-weight: 700;
+    font-size: 0.9em;
+}
+.inv-count { font-size: 0.85em; color: var(--text-dim); }
+.major-badge {
+    margin-top: 6px;
+    padding: 3px 8px;
+    background: var(--gold);
+    color: var(--btn-primary-text);
+    border-radius: 6px;
+    font-size: 0.85em;
+    display: inline-block;
+}
 
 /* 操作按钮 */
 .action-area { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }

@@ -416,6 +416,36 @@ const app = {
         return (room.gameData.players[pid] || {}).seat;
     },
 
+    // 渲染单个玩家的投资区域（含大股东筹码，放在该玩家面前）
+    renderInvestedCard(seat, gd) {
+        const player = this.getSeatPlayer(seat);
+        if (!player) return '';
+        const isMe = seat === this.getSeatByPid(this.playerId);
+        const invested = gd.invested[seat] || {};
+        const entries = Object.entries(invested);
+        // 找出该玩家是大股东的公司
+        const majorCompanies = COMPANIES.filter(num => gd.majorHolder[num] === seat);
+        // 投资牌内容
+        const cards = entries.length === 0
+            ? '<span style="color:var(--text-dim);font-size:0.85em;">暂无投资</span>'
+            : entries.map(([company, count]) => {
+                const idx = COMPANIES.indexOf(Number(company));
+                const color = COMPANIES_COLORS[idx] || '#888';
+                return `<span class="inv-chip" style="background:${color};">${company}</span><span class="inv-count">×${count}</span>`;
+              }).join(' ');
+        // 大股东标记
+        const major = majorCompanies.length > 0
+            ? `<div class="major-badge">👑 大股东：${majorCompanies.map(n => '公司' + n).join('、')}</div>`
+            : '';
+        return `
+            <div class="invest-card ${isMe ? 'me' : ''}">
+                <div class="invest-header">${isMe ? '你' : player.name}</div>
+                <div class="invest-body">${cards}</div>
+                ${major}
+            </div>
+        `;
+    },
+
     // ===== 渲染 =====
     renderGame() {
         const room = this.currentRoomData;
@@ -479,13 +509,15 @@ const app = {
                 '</div>';
         }
 
-        // 已投资
-        const invested = gd.invested[mySeat] || {};
-        const investedArea = document.createElement('div');
-        investedArea.className = 'invested-area';
-        investedArea.innerHTML = '<h3>我的投资</h3>' + (Object.keys(invested).length === 0
-            ? '<p style="color:var(--text-dim);">暂无投资</p>'
-            : Object.entries(invested).map(([company, count]) => `<div class="invested-company">公司${company}：${count}张</div>`).join(''));
+        // ===== 其他玩家的投资区域 =====
+        const investOthers = document.getElementById('invest-others');
+        investOthers.innerHTML = '<h3>其他玩家投资</h3>' + gd.seats
+            .filter(seat => seat !== mySeat)
+            .map(seat => this.renderInvestedCard(seat, gd)).join('');
+
+        // ===== 我的投资区域 =====
+        const investMine = document.getElementById('invest-mine');
+        investMine.innerHTML = '<h3>我的投资</h3>' + this.renderInvestedCard(mySeat, gd);
 
         // 操作区（严格回合制：先抽牌，再打牌）
         const actionArea = document.getElementById('action-area');
