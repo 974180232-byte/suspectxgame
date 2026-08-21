@@ -313,10 +313,16 @@ function cleanupOfflinePlayers() {
     if (!room || !room.players) return;
     const now = Date.now();
     let changed = false;
-    // 房主掉线 → 解散房间
+    // 房主掉线 → 解散房间（仅当明确有房主活跃时间且确实超时才解散；
+    // 数据缺失/未同步时不误判，避免因同步时序把在房间的玩家误当掉线而解散房间）
     const owner = room.players[room.createdBy];
-    if (!owner || (now - (owner.lastActive || owner.joinedAt || 0) > OFFLINE_TIMEOUT)) {
+    const ownerLast = owner ? (owner.lastActive || owner.joinedAt || 0) : 0;
+    if (owner && ownerLast > 0 && (now - ownerLast > OFFLINE_TIMEOUT)) {
         deleteRoom(roomId);
+        return;
+    }
+    // 若房主数据缺失（尚未同步到该设备），不做任何解散操作，等待数据同步
+    if (!owner) {
         return;
     }
     // 移除掉线的非房主玩家
