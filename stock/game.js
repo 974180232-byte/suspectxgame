@@ -600,6 +600,33 @@ const app = {
         if (!room || !room.gameData) return;
         room.gameData.announcement = text;
         room.gameData.announceTime = Date.now();
+        // 弹窗显示当前玩家的操作
+        this.showAnnouncePopup(text);
+    },
+
+    // 弹窗显示当前玩家的操作（居中醒目提示，所有玩家通过轮询/广播看到）
+    showAnnouncePopup(text) {
+        try {
+            const el = document.getElementById('announce-popup');
+            if (!el) return;
+            el.innerHTML = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            el.classList.remove('hidden');
+            // 播放操作音效
+            playSfx('click');
+            clearTimeout(this._popupTimer);
+            this._popupTimer = setTimeout(() => el.classList.add('hidden'), 2500);
+        } catch (e) {}
+    },
+
+    // 渲染时检测公告变化，触发其他设备弹窗（通过轮询/广播同步）
+    checkAnnouncePopup() {
+        const room = this.currentRoomData;
+        if (!room || !room.gameData) return;
+        const gd = room.gameData;
+        if (gd.announcement && gd.announcement !== this._lastAnnounceText) {
+            this._lastAnnounceText = gd.announcement;
+            this.showAnnouncePopup(gd.announcement);
+        }
     },
 
     // 渲染单个玩家的投资区域（含大股东筹码，放在该玩家面前）
@@ -681,6 +708,9 @@ const app = {
             annEl.innerHTML = '等待玩家操作...';
             annEl.classList.add('empty');
         }
+
+        // 检测公告变化：其他设备通过轮询/广播同步时，弹出操作提示
+        this.checkAnnouncePopup();
 
         // 大股东信息
         const stockInfo = document.getElementById('stock-info');
