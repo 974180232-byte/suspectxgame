@@ -345,27 +345,8 @@ input[type="text"]:focus { border-color: var(--gold); }
 .result-confirm-info {
     text-align: center;
 }
-
-/* 操作弹窗：显示当前玩家的操作 */
-.announce-popup {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    background: var(--panel);
-    border: 2px solid var(--gold);
-    border-radius: 12px;
-    padding: 18px 28px;
-    max-width: 80%;
-    text-align: center;
-    font-size: 1.1em;
-    font-weight: 600;
-    color: var(--text);
-    z-index: 3000;
-    box-shadow: 0 8px 30px rgba(0,0,0,0.4);
-    animation: popup-in 0.25s ease-out;
-}
-@keyframes popup-in {
-    from { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
-    to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+/* 结算：玩家给出的筹码张数（醒目颜色，与玩家名数字区分） */
+.paid-count {
+    color: var(--red);
+    font-weight: 700;
 }

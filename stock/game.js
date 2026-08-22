@@ -657,39 +657,12 @@ const app = {
         return (room.gameData.players[pid] || {}).seat;
     },
 
-    // 广播公告：记录到 gd.announcement，所有玩家通过轮询看到
+    // 广播公告：记录到 gd.announcement，所有玩家通过轮询看到（显示在资金上方的公告栏）
     announce(text) {
         const room = this.currentRoomData;
         if (!room || !room.gameData) return;
         room.gameData.announcement = text;
         room.gameData.announceTime = Date.now();
-        // 弹窗显示当前玩家的操作
-        this.showAnnouncePopup(text);
-    },
-
-    // 弹窗显示当前玩家的操作（居中醒目提示，所有玩家通过轮询/广播看到）
-    showAnnouncePopup(text) {
-        try {
-            const el = document.getElementById('announce-popup');
-            if (!el) return;
-            el.innerHTML = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            el.classList.remove('hidden');
-            // 播放操作音效
-            playSfx('click');
-            clearTimeout(this._popupTimer);
-            this._popupTimer = setTimeout(() => el.classList.add('hidden'), 2500);
-        } catch (e) {}
-    },
-
-    // 渲染时检测公告变化，触发其他设备弹窗（通过轮询/广播同步）
-    checkAnnouncePopup() {
-        const room = this.currentRoomData;
-        if (!room || !room.gameData) return;
-        const gd = room.gameData;
-        if (gd.announcement && gd.announcement !== this._lastAnnounceText) {
-            this._lastAnnounceText = gd.announcement;
-            this.showAnnouncePopup(gd.announcement);
-        }
     },
 
     // 渲染单个玩家的投资区域（含大股东筹码，放在该玩家面前）
@@ -762,7 +735,7 @@ const app = {
         const me = this.getSeatPlayer(mySeat);
         document.getElementById('money-bar').textContent = `💰 我的资金：${me ? me.money : 0} | 🃏 牌库剩余：${gd.deck ? gd.deck.length : 0}张`;
 
-        // 公告栏：显示当前玩家最近的操作
+        // 公告栏：显示当前玩家最近的操作（保留在资金上方）
         const annEl = document.getElementById('announce-bar');
         if (gd.announcement) {
             annEl.innerHTML = `<strong>📢 ${gd.announcement}</strong>`;
@@ -771,9 +744,6 @@ const app = {
             annEl.innerHTML = '等待玩家操作...';
             annEl.classList.add('empty');
         }
-
-        // 检测公告变化：其他设备通过轮询/广播同步时，弹出操作提示
-        this.checkAnnouncePopup();
 
         // 大股东信息
         const stockInfo = document.getElementById('stock-info');
@@ -1098,20 +1068,25 @@ const app = {
                     const count = (gd.invested[seat] && gd.invested[seat][num]) || 0;
                     if (count > 0) {
                         money[seat] -= count;
-                        money[holderSeat] += count;
-                        paidBy.push(`${this.getSeatPlayer(seat).name}${count}张`);
+                        // 给出的筹码张数用醒目颜色区分，避免与玩家名末尾数字混淆
+                        paidBy.push(`${this.getSeatPlayer(seat).name}<span class="paid-count">${count}</span>张`);
                     }
                 });
-                const paidText = paidBy.length > 0 ? `，收自 ${paidBy.join('、')}` : '';
-                settlementLog.push(`公司${num}：大股东 ${this.getSeatPlayer(holderSeat).name}（${maxCount}张）${paidText}`);
-                // 大股东收到的筹码转为面值3筹码（每收到 3 点变 1 个面值3）
-                // 收到的总额
-                let received = 0;
+                // 大股东得到的金钱筹码「会变成3」：每收到 3 个转成 1 个面值3筹码，
+                // 剩余不足 3 的部分保持为 1 面值金钱筹码。
+                let receivedTotal = 0;
                 gd.seats.forEach(seat => {
                     if (seat === holderSeat) return;
-                    received += (gd.invested[seat] && gd.invested[seat][num]) || 0;
+                    receivedTotal += (gd.invested[seat] && gd.invested[seat][num]) || 0;
                 });
-                chips3[holderSeat] += Math.floor(received / 3);
+                const newChips3 = Math.floor(receivedTotal / 3);   // 整3的部分转面值3筹码
+                const remainMoney = receivedTotal % 3;             // 余数保持1面值金钱
+                chips3[holderSeat] += newChips3;
+                money[holderSeat] += remainMoney;
+                const paidText = paidBy.length > 0 ? `，收自 ${paidBy.join('、')}` : '';
+                let convertText = '';
+                if (newChips3 > 0) convertText = `，<span class="paid-count">${receivedTotal}</span>筹码→<span class="chips3-val">${newChips3}</span>个面值3`;
+                settlementLog.push(`公司${num}：大股东 ${this.getSeatPlayer(holderSeat).name}（${maxCount}张）${paidText}${convertText}`);
             }
         });
         // 3. 保存最终资金和面值3筹码
