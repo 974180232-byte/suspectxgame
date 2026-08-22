@@ -22,7 +22,47 @@
                 <div class="game-desc">多人股市卡牌游戏</div>
             </a>
         </div>
+
+        <button onclick="openBugReport()" style="margin-top:40px;padding:10px 20px;border:2px solid #d0342c;background:transparent;color:#d0342c;border-radius:20px;font-size:1em;cursor:pointer;">🐛 反馈 Bug</button>
     </div>
+
+    <!-- Bug 反馈弹窗 -->
+    <div id="bug-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;z-index:1000;">
+        <div style="background:#fff;border-radius:16px;padding:24px;max-width:420px;width:90%;box-shadow:0 8px 30px rgba(0,0,0,0.3);">
+            <h2 style="margin:0 0 16px;color:#222;">🐛 反馈 Bug</h2>
+            <label style="display:block;font-size:0.9em;color:#555;margin-bottom:4px;">所属游戏</label>
+            <select id="bug-game" style="width:100%;padding:10px;border:1px solid #cfd3d9;border-radius:8px;margin-bottom:14px;font-size:1em;">
+                <option value="游戏中心">游戏中心</option>
+                <option value="嫌疑人之绷住">嫌疑人之绷住</option>
+                <option value="大股东之神秘的9和谁想吃10">大股东之神秘的9和谁想吃10</option>
+            </select>
+            <label style="display:block;font-size:0.9em;color:#555;margin-bottom:4px;">Bug 描述</label>
+            <textarea id="bug-desc" rows="5" placeholder="请尽量详细描述 bug 出现的情况、操作步骤、预期与实际情况..." style="width:100%;padding:10px;border:1px solid #cfd3d9;border-radius:8px;margin-bottom:14px;font-size:1em;resize:vertical;box-sizing:border-box;"></textarea>
+            <div style="display:flex;gap:10px;justify-content:flex-end;">
+                <button onclick="closeBugReport()" style="padding:10px 18px;border:1px solid #cfd3d9;background:#f4f5f7;border-radius:10px;cursor:pointer;">取消</button>
+                <button onclick="sendBugReport()" style="padding:10px 18px;border:none;background:#d0342c;color:#fff;border-radius:10px;cursor:pointer;">✉️ 通过邮件发送</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function openBugReport() {
+            document.getElementById('bug-modal').style.display = 'flex';
+            document.getElementById('bug-desc').value = '';
+        }
+        function closeBugReport() {
+            document.getElementById('bug-modal').style.display = 'none';
+        }
+        function sendBugReport() {
+            var game = document.getElementById('bug-game').value;
+            var desc = document.getElementById('bug-desc').value.trim();
+            if (!desc) { alert('请填写 Bug 描述'); return; }
+            var subject = encodeURIComponent('[Bug反馈] ' + game);
+            var body = encodeURIComponent('所属游戏：' + game + '\n\nBug 描述：\n' + desc + '\n\n—— 请帮忙修复，谢谢！');
+            window.location.href = 'mailto:2932804179@qq.com?subject=' + subject + '&body=' + body;
+            closeBugReport();
+        }
+    </script>
 
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; background: var(--bg, #f4f5f7); color: var(--text, #222); }
