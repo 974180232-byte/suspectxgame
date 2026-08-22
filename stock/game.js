@@ -179,10 +179,27 @@ function startCloudSyncLoop() {
             pullRoomsFromCloud();
             heartbeatCurrentRoom();   // 刷新自己在房间中的活跃时间
             triggerGlobalCleanup();   // 云端全局清理（掉线玩家 / 0 人房间）
+            tryRejoinPendingRoom();   // 若有待重连的房间且已同步到缓存，则自动回到房间
         }
         cloudSyncTimer = setTimeout(tick, 1000);
     };
     tick();
+}
+
+// 处理「刷新/重连」：待重连的房间同步到缓存后，自动回到房间
+function tryRejoinPendingRoom() {
+    if (!app || !app.pendingRejoin) return;
+    const roomId = app.pendingRejoin;
+    const room = getRoom(roomId);
+    if (room) {
+        app.pendingRejoin = null;
+        app.rejoinRoom(roomId);
+    }
+    // 若云端确认没有该房间（清理逻辑已移除它），清除待重连标记回到大厅
+    if (!room && !cloudRoomsCache[roomId]) {
+        app.pendingRejoin = null;
+        localStorage.removeItem('stock_current_room');
+    }
 }
 function stopCloudSyncLoop() {
     if (cloudSyncTimer) { clearTimeout(cloudSyncTimer); cloudSyncTimer = null; }
@@ -487,6 +504,44 @@ const app = {
         this.currentRoomData = room;
         this.showRoom();
         this.showToast('已加入房间');
+    },
+
+    // 刷新/重连：恢复身份后自动回到之前所在的房间
+    rejoinRoom(roomId) {
+        if (!this.playerId) return;
+        // 等云端数据同步后房间可能才在缓存里，先尝试直接读，稍后靠轮询兜底
+        const room = getRoom(roomId);
+        if (!room) {
+            // 房间还没同步到本地缓存：保留 pendingRejoin，由轮询拉取到后自动重连；
+            // 若云端确实已删除，轮询会清除 pendingRejoin 回到大厅。
+            this.pendingRejoin = roomId;
+            this.currentRoomId = null;
+            this.currentRoomData = null;
+            this.showLobby();
+            return;
+        }
+        // 房间存在：若该玩家已被移除（掉线被清理），则按原座位重新加入；否则直接进入
+        if (!room.players || !room.players[this.playerId]) {
+            const usedSeats = Object.values(room.players || {}).map(p => p.seat);
+            let seat = 0;
+            while (usedSeats.includes(seat)) seat++;
+            room.players = room.players || {};
+            room.players[this.playerId] = {
+                name: this.playerName,
+                seat: seat,
+                money: INITIAL_MONEY,
+                joinedAt: Date.now(),
+                lastActive: Date.now()
+            };
+        }
+        // 已在该房间：刷新活跃时间并进入
+        room.players[this.playerId].lastActive = Date.now();
+        saveRoom(roomId, room);
+        this.currentRoomId = roomId;
+        localStorage.setItem('stock_current_room', roomId);
+        this.currentRoomData = room;
+        this.renderCurrentView();
+        this.showToast('已回到房间');
     },
 
     leaveRoom() {
@@ -1210,7 +1265,17 @@ const app = {
 initBroadcastChannel();
 initSupabase();   // 尝试连接 Supabase（跨设备联机），失败回退本地模式
 document.addEventListener('DOMContentLoaded', () => {
-    app.showLogin();
+    // 尝试恢复之前的身份并自动回到房间（刷新/关闭网页后重连）
+    const restored = app.restoreSession();
+    const savedRoom = localStorage.getItem('stock_current_room');
+    if (restored && savedRoom) {
+        // 尝试立即重连；若云端数据尚未同步（房间不在本地缓存），
+        // 会设置 pendingRejoin，由轮询拉取到数据后自动重连
+        app.rejoinRoom(savedRoom);
+        app.pendingRejoin = savedRoom;
+    } else {
+        app.showLogin();
+    }
     document.getElementById('name-input').addEventListener('keypress', (e) => {
         if (e.key === 'Enter') app.login();
     });
