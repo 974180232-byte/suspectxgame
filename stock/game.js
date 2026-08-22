@@ -384,6 +384,9 @@ const app = {
     showLobby() {
         document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
         document.getElementById('lobby-screen').classList.remove('hidden');
+        // 欢迎玩家名字（仿照嫌疑人）
+        const welcome = document.getElementById('lobby-welcome');
+        if (welcome) welcome.textContent = `👋 欢迎，${this.playerName}`;
         this.refreshRooms();
     },
     showRoom() {
