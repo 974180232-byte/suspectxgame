@@ -1157,14 +1157,13 @@ const app = {
         let html = `<h3>① 本轮移除的 5 张牌</h3><div class="result-removed">${(gd.removedCards || []).map(c => `<span class="inv-chip" style="background:${COMPANIES_COLORS[COMPANIES.indexOf(c)] || '#888'};">${c}</span>`).join(' ')}</div>`;
         // 2. 公司结算过程（settlementLog 每项已是多行 HTML，直接拼接）
         html += `<h3>② 公司结算</h3><div class="result-settle">${(gd.settlementLog || []).join('')}</div>`;
-        // 3. 排名（面值3换算的筹码用金色区分，避免与玩家名数字连在一起）
+        // 3. 排名（总筹码 = 资金 + 面值3×3，等号后显示完整总分）
         html += `<h3>③ 本轮排名（总筹码 = 资金 + 面值3×3）</h3>`;
         html += (gd.rank || []).map((seat, i) => {
             const pts = gd.roundScores[seat];
             const sign = pts > 0 ? '+' + pts : pts;
-            const chips3Val = gd.chips3Final[seat] * 3;
             return `<div class="result-rank ${i === 0 ? 'first' : ''}" style="padding:6px 0;border-bottom:1px solid var(--border);">
-                ${i+1}. ${pName(seat)}：💰<b>${gd.totalChips[seat]}</b>（资金${gd.scores[seat]} + 面值3×${gd.chips3Final[seat]} = <span class="chips3-val">${chips3Val}</span>）积分 <b>${sign}</b> 总积分${gd.totalScore[seat]}
+                ${i+1}. ${pName(seat)}：💰<b>${gd.totalChips[seat]}</b>（资金${gd.scores[seat]} + 面值3×${gd.chips3Final[seat]} = <span class="chips3-val">${gd.totalChips[seat]}</span>）积分 <b>${sign}</b> 总积分${gd.totalScore[seat]}
             </div>`;
         }).join('');
         // 轮次信息
