@@ -835,6 +835,11 @@ const app = {
         } else {
             actionArea.innerHTML = '';
         }
+
+        // 结算阶段：若弹窗被隐藏（复盘），提供「查看结算」入口
+        if (gd.phase === 'score' && document.getElementById('result-modal').classList.contains('hidden')) {
+            actionArea.innerHTML += '<button class="action-btn" onclick="app.showResult()" style="margin-top:8px;">📊 查看结算</button>';
+        }
     },
 
     // 选中的手牌（用于打牌）
@@ -868,7 +873,8 @@ const app = {
         gd.hands[mySeat].push(card);
         // 从牌库抽牌，本轮不是从市场拿牌，清除限制
         gd.tookFromMarketCompany = null;
-        this.announce(`${this.getSeatPlayer(mySeat).name} 从牌库抽了公司${card}的牌${cost > 0 ? '（支付市场投资' + cost + '元）' : ''}`);
+        // 只播报公开动作，不暴露抽到哪家公司（私密信息）
+        this.announce(`${this.getSeatPlayer(mySeat).name} 从牌库抽了一张牌${cost > 0 ? '（支付市场投资' + cost + '元）' : ''}`);
         playSfx('draw');
         this.afterDraw();
         saveRoom(this.currentRoomId, room);
@@ -1057,9 +1063,9 @@ const app = {
                 else if (count === maxCount && count > 0) { tie = true; }
             });
             if (maxCount === 0) {
-                settlementLog.push(`公司${num}：无人投资，无大股东`);
+                settlementLog.push(`<div class="settle-company">公司${num}：无人投资，无大股东</div>`);
             } else if (tie) {
-                settlementLog.push(`公司${num}：最多${maxCount}张，平手，无大股东`);
+                settlementLog.push(`<div class="settle-company">公司${num}：最多${maxCount}张，平手，无大股东</div>`);
             } else {
                 // 大股东获得所有其他持有者的筹码
                 const paidBy = [];
@@ -1068,8 +1074,8 @@ const app = {
                     const count = (gd.invested[seat] && gd.invested[seat][num]) || 0;
                     if (count > 0) {
                         money[seat] -= count;
-                        // 给出的筹码张数用醒目颜色区分，避免与玩家名末尾数字混淆
-                        paidBy.push(`${this.getSeatPlayer(seat).name}<span class="paid-count">${count}</span>张`);
+                        // 给出对应股份的面值1资金筹码（数字用醒目颜色区分，与玩家名数字区分）
+                        paidBy.push(`${this.getSeatPlayer(seat).name}持股<span class="paid-count">${count}</span>张 → 付<span class="paid-count">${count}</span>个面值1筹码`);
                     }
                 });
                 // 大股东得到的金钱筹码「会变成3」：每收到 3 个转成 1 个面值3筹码，
@@ -1083,10 +1089,14 @@ const app = {
                 const remainMoney = receivedTotal % 3;             // 余数保持1面值金钱
                 chips3[holderSeat] += newChips3;
                 money[holderSeat] += remainMoney;
-                const paidText = paidBy.length > 0 ? `，收自 ${paidBy.join('、')}` : '';
-                let convertText = '';
-                if (newChips3 > 0) convertText = `，<span class="paid-count">${receivedTotal}</span>筹码→<span class="chips3-val">${newChips3}</span>个面值3`;
-                settlementLog.push(`公司${num}：大股东 ${this.getSeatPlayer(holderSeat).name}（${maxCount}张）${paidText}${convertText}`);
+                // 结算展示：大股东 + 各股东持股/付筹码（不写面值3转换步骤）
+                const lines = [`<div class="settle-company">公司${num}：大股东 ${this.getSeatPlayer(holderSeat).name}（持股${maxCount}张）</div>`];
+                paidBy.forEach(p => lines.push(`<div class="settle-pay">&nbsp;&nbsp;${p}</div>`));
+                // 大股东共收到筹码数（面值1）提示，转换后的面值3体现在排名中
+                if (receivedTotal > 0) {
+                    lines.push(`<div class="settle-pay">&nbsp;&nbsp;共收 <span class="paid-count">${receivedTotal}</span> 个面值1筹码</div>`);
+                }
+                settlementLog.push(lines.join(''));
             }
         });
         // 3. 保存最终资金和面值3筹码
@@ -1145,8 +1155,8 @@ const app = {
         const pName = (seat) => this.getSeatPlayer(seat).name;
         // 1. 展示删除的5张牌
         let html = `<h3>① 本轮移除的 5 张牌</h3><div class="result-removed">${(gd.removedCards || []).map(c => `<span class="inv-chip" style="background:${COMPANIES_COLORS[COMPANIES.indexOf(c)] || '#888'};">${c}</span>`).join(' ')}</div>`;
-        // 2. 公司结算过程
-        html += `<h3>② 公司结算</h3><div class="result-settle">${(gd.settlementLog || []).map(s => `<div>${s}</div>`).join('')}</div>`;
+        // 2. 公司结算过程（settlementLog 每项已是多行 HTML，直接拼接）
+        html += `<h3>② 公司结算</h3><div class="result-settle">${(gd.settlementLog || []).join('')}</div>`;
         // 3. 排名（面值3换算的筹码用金色区分，避免与玩家名数字连在一起）
         html += `<h3>③ 本轮排名（总筹码 = 资金 + 面值3×3）</h3>`;
         html += (gd.rank || []).map((seat, i) => {
@@ -1177,6 +1187,12 @@ const app = {
         const btn = document.getElementById('btn-result-confirm');
         btn.textContent = isMeConfirmed ? '等待其他玩家确认...' : '确认结算';
         btn.disabled = isMeConfirmed;
+    },
+
+    // 隐藏结算弹窗（仅收起弹窗便于复盘，不触发确认推进）
+    hideResult() {
+        document.getElementById('result-modal').classList.add('hidden');
+        this.showGame();   // 刷新界面，显示「查看结算」入口
     },
 
     closeResult() {

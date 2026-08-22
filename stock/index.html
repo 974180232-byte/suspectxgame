@@ -67,12 +67,12 @@
                     <div class="side-panel left" id="left-neighbor"></div>
                     <!-- 中间：游戏主体 -->
                     <div class="game-main">
-                        <div id="announce-bar" class="announce-bar"></div>
                         <div id="money-bar" class="money-bar"></div>
                         <div id="stock-info" class="stock-info"></div>
                         <div id="market-area" class="market-area"></div>
                         <div id="invest-others" class="invest-others"></div>
                         <div id="invest-mine" class="invest-area"></div>
+                        <div id="announce-bar" class="announce-bar"></div>
                         <div id="hand-area" class="hand-area"></div>
                         <div id="action-area" class="action-area"></div>
                     </div>
@@ -85,7 +85,10 @@
         <!-- 结算弹窗 -->
         <div id="result-modal" class="modal-overlay hidden">
             <div class="modal">
-                <h2 id="result-title">📊 结算</h2>
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <h2 id="result-title" style="margin:0;">📊 结算</h2>
+                    <button class="btn-secondary" id="btn-result-hide" onclick="playSfx('click');app.hideResult()">🙈 隐藏（复盘）</button>
+                </div>
                 <div id="result-content"></div>
                 <button class="btn-primary" id="btn-result-confirm" onclick="playSfx('click');app.closeResult()">确认结算</button>
             </div>
