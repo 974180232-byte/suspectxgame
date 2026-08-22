@@ -457,6 +457,16 @@ const app = {
     },
 
     // ===== 创建/加入房间 =====
+    // 选择模式（仅房主）：quick = 1轮结束，standard = 4轮结束
+    selectMode(mode) {
+        const room = this.currentRoomData;
+        if (!room) return;
+        if (room.createdBy !== this.playerId) { this.showToast('只有房主能选择模式'); return; }
+        room.mode = mode;
+        saveRoom(this.currentRoomId, room);
+        this.renderRoomPlayers();
+    },
+
     createRoom() {
         if (!this.playerName) return;
         const roomId = makeRoomId();
@@ -467,7 +477,8 @@ const app = {
             createdAt: Date.now(),
             players: {},
             gameData: null,
-            password: Math.floor(1000 + Math.random() * 9000).toString()
+            password: Math.floor(1000 + Math.random() * 9000).toString(),
+            mode: 'standard'   // 默认标准模式（4轮）
         };
         this.currentRoomId = roomId;
         this.joinRoom(roomId, roomData.password, roomData);
@@ -587,6 +598,17 @@ const app = {
         const btn = document.getElementById('btn-start-game');
         btn.disabled = !isOwner || players.length < 3;
         btn.textContent = isOwner ? '开始游戏' : '等待房主开始...';
+
+        // 模式选择高亮：房主可点，其他人只读显示
+        const mode = room.mode || 'standard';
+        const qBtn = document.getElementById('mode-quick');
+        const sBtn = document.getElementById('mode-standard');
+        if (qBtn && sBtn) {
+            qBtn.classList.toggle('active', mode === 'quick');
+            sBtn.classList.toggle('active', mode === 'standard');
+            qBtn.disabled = !isOwner;
+            sBtn.disabled = !isOwner;
+        }
     },
 
     // ===== 开始游戏 =====
@@ -638,7 +660,8 @@ const app = {
             chips3: chips3,         // seat -> 面值3筹码数量
             roundScore: {},         // seat -> 本轮积分
             totalScore: {},         // seat -> 总积分（多轮累加）
-            round: 1,               // 当前轮次（1-4）
+            round: 1,               // 当前轮次（1-N）
+            totalRounds: (this.currentRoomData && this.currentRoomData.mode === 'quick') ? 1 : 4,  // 快速=1轮，标准=4轮
             turnStep: 'draw',       // 'draw': 需抽牌, 'play': 需打牌
             turnCount: 0,
             history: [],
@@ -1167,7 +1190,7 @@ const app = {
             </div>`;
         }).join('');
         // 轮次信息
-        html += `<div style="margin-top:10px;color:var(--text-dim);">第 ${gd.round} / 4 轮</div>`;
+        html += `<div style="margin-top:10px;color:var(--text-dim);">第 ${gd.round} / ${gd.totalRounds || 4} 轮</div>`;
         // 确认进度（需所有存活玩家都确认才进入下一轮）
         const players = Object.values(room.players || {}).filter(p => p && p.name);
         const confirmedCount = Object.values(gd.resultConfirmed || {}).filter(Boolean).length;
@@ -1218,12 +1241,14 @@ const app = {
 
         // 所有人已确认：关闭弹窗并进入下一轮/结束
         document.getElementById('result-modal').classList.add('hidden');
-        // 多轮：若不足4轮则进入下一轮，否则游戏结束
-        if (gd.round < 4) {
+        // 多轮：若不足总轮数则进入下一轮，否则游戏结束
+        const totalRounds = gd.totalRounds || 4;
+        if (gd.round < totalRounds) {
             const prevScore = { ...gd.totalScore };
             const prevChips3 = { ...gd.chips3 };
             const newGd = this.initGameData(room.players);
             newGd.round = gd.round + 1;
+            newGd.totalRounds = totalRounds;
             newGd.totalScore = prevScore;
             newGd.chips3 = prevChips3;
             room.status = 'playing';
@@ -1231,7 +1256,7 @@ const app = {
             saveRoom(this.currentRoomId, room);
             this.showGame();
         } else {
-            // 4轮结束，游戏结束：回房间，显示最终排名
+            // 总轮数结束，游戏结束：回房间
             room.status = 'waiting';
             room.gameData = null;
             saveRoom(this.currentRoomId, room);

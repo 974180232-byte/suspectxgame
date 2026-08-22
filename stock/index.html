@@ -50,6 +50,11 @@
                     </div>
                 </div>
                 <p id="room-code-display" style="text-align:center;color:var(--text-dim);font-size:0.9em;"></p>
+                <h3>模式选择</h3>
+                <div id="mode-select" class="mode-select">
+                    <button class="mode-btn" id="mode-quick" onclick="playSfx('click');app.selectMode('quick')">⚡ 快速模式<br><small>1 轮结束</small></button>
+                    <button class="mode-btn" id="mode-standard" onclick="playSfx('click');app.selectMode('standard')">🏆 标准模式<br><small>4 轮结束</small></button>
+                </div>
                 <h3>玩家</h3>
                 <div id="room-players"></div>
                 <button class="btn-primary" id="btn-start-game" onclick="playSfx('click');app.startGame()" disabled>开始游戏</button>

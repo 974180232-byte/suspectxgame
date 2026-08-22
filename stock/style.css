@@ -141,6 +141,47 @@ input[type="text"]:focus { border-color: var(--gold); }
     border-radius: 8px;
 }
 
+/* 模式选择 */
+.mode-select {
+    display: flex;
+    gap: 10px;
+    margin: 10px 0 16px;
+}
+.mode-btn {
+    flex: 1;
+    padding: 12px 8px;
+    border: 2px solid var(--border);
+    border-radius: 10px;
+    background: var(--panel);
+    color: var(--text);
+    font-size: 1em;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: center;
+}
+.mode-btn small {
+    font-size: 0.8em;
+    color: var(--text-dim);
+    font-weight: normal;
+}
+.mode-btn.active {
+    border-color: var(--gold);
+    background: var(--gold);
+    color: var(--btn-primary-text);
+    font-weight: 600;
+}
+.mode-btn.active small {
+    color: var(--btn-primary-text);
+    opacity: 0.85;
+}
+.mode-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+.mode-btn:not(.active):not(:disabled):hover {
+    border-color: var(--gold);
+}
+
 /* 游戏界面 */
 .turn-info { font-weight: 600; color: var(--gold); }
 .money-bar { margin: 8px 0; padding: 10px; background: var(--panel-strong); border-radius: 8px; font-weight: 600; }
