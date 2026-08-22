@@ -1026,9 +1026,9 @@ const app = {
             this.getSeatPlayer(seat).money = money[seat];
             gd.chips3[seat] = chips3[seat];
         });
-        // 4. 计算总筹码并排名
+        // 4. 计算总筹码并排名（面值3筹码算 3 分）
         const totalChips = {};
-        gd.seats.forEach(seat => { totalChips[seat] = money[seat] + chips3[seat]; });
+        gd.seats.forEach(seat => { totalChips[seat] = money[seat] + chips3[seat] * 3; });
         // 排名：先按总筹码，同分按面值3筹码
         const ranked = [...gd.seats].sort((a, b) => {
             if (totalChips[b] !== totalChips[a]) return totalChips[b] - totalChips[a];
@@ -1078,12 +1078,12 @@ const app = {
         // 2. 公司结算过程
         html += `<h3>② 公司结算</h3><div class="result-settle">${(gd.settlementLog || []).map(s => `<div>${s}</div>`).join('')}</div>`;
         // 3. 排名
-        html += `<h3>③ 本轮排名（总筹码 = 资金 + 面值3筹码）</h3>`;
+        html += `<h3>③ 本轮排名（总筹码 = 资金 + 面值3×3）</h3>`;
         html += (gd.rank || []).map((seat, i) => {
             const pts = gd.roundScores[seat];
             const sign = pts > 0 ? '+' + pts : pts;
             return `<div class="result-rank ${i === 0 ? 'first' : ''}" style="padding:6px 0;border-bottom:1px solid var(--border);">
-                ${i+1}. ${pName(seat)}：💰${gd.totalChips[seat]}（资金${gd.scores[seat]} + 面值3×${gd.chips3Final[seat]}）积分 <b>${sign}</b> 总积分${gd.totalScore[seat]}
+                ${i+1}. ${pName(seat)}：💰${gd.totalChips[seat]}（资金${gd.scores[seat]} + 面值3×${gd.chips3Final[seat]} = ${gd.chips3Final[seat]*3}）积分 <b>${sign}</b> 总积分${gd.totalScore[seat]}
             </div>`;
         }).join('');
         // 轮次信息
