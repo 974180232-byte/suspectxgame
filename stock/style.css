@@ -337,6 +337,15 @@ input[type="text"]:focus { border-color: var(--gold); }
     box-shadow: 0 4px 12px rgba(0,0,0,0.2);
 }
 
+/* 结算：面值3换算的筹码数字（金色区分） */
+.chips3-val {
+    color: var(--gold);
+    font-weight: 700;
+}
+.result-confirm-info {
+    text-align: center;
+}
+
 /* 操作弹窗：显示当前玩家的操作 */
 .announce-popup {
     position: fixed;

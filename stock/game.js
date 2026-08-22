@@ -377,6 +377,9 @@ const app = {
     showGame() {
         document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
         document.getElementById('game-screen').classList.remove('hidden');
+        // 若已离开结算阶段（进入下一轮），关闭结算弹窗
+        const rm = document.getElementById('result-modal');
+        if (rm && !rm.classList.contains('hidden')) rm.classList.add('hidden');
         this.renderGame();
     },
 
@@ -398,6 +401,10 @@ const app = {
             this.renderRoomPlayers();
         } else if (room.status === 'playing') {
             this.showGame();
+            // 结算阶段：所有玩家都应弹出结算弹窗
+            if (room.gameData && room.gameData.phase === 'score') {
+                this.showResult();
+            }
         }
     },
 
@@ -576,7 +583,8 @@ const app = {
             round: 1,               // 当前轮次（1-4）
             turnStep: 'draw',       // 'draw': 需抽牌, 'play': 需打牌
             turnCount: 0,
-            history: []
+            history: [],
+            resultConfirmed: {}     // pid -> true（结算确认，需所有玩家都确认才进入下一轮）
         };
     },
 
@@ -1086,6 +1094,8 @@ const app = {
             gd.totalScore[seat] = (gd.totalScore[seat] || 0) + (scoreMap[seat] || 0);
         });
         gd.phase = 'score';
+        gd.advancing = false;   // 结算确认推进锁，防止多人竞态重复进入下一轮
+        gd.resultConfirmed = {};  // 重置确认状态（每轮结算单独统计）
         gd.scores = money;
         gd.chips3Final = chips3;
         gd.totalChips = totalChips;
@@ -1097,7 +1107,7 @@ const app = {
         this.showResult();
     },
 
-    // 显示结算
+    // 显示结算（所有玩家通过轮询同步时都会调用，需避免重复渲染闪烁）
     showResult() {
         const room = this.currentRoomData;
         const gd = room.gameData;
@@ -1107,26 +1117,62 @@ const app = {
         let html = `<h3>① 本轮移除的 5 张牌</h3><div class="result-removed">${(gd.removedCards || []).map(c => `<span class="inv-chip" style="background:${COMPANIES_COLORS[COMPANIES.indexOf(c)] || '#888'};">${c}</span>`).join(' ')}</div>`;
         // 2. 公司结算过程
         html += `<h3>② 公司结算</h3><div class="result-settle">${(gd.settlementLog || []).map(s => `<div>${s}</div>`).join('')}</div>`;
-        // 3. 排名
+        // 3. 排名（面值3换算的筹码用金色区分，避免与玩家名数字连在一起）
         html += `<h3>③ 本轮排名（总筹码 = 资金 + 面值3×3）</h3>`;
         html += (gd.rank || []).map((seat, i) => {
             const pts = gd.roundScores[seat];
             const sign = pts > 0 ? '+' + pts : pts;
+            const chips3Val = gd.chips3Final[seat] * 3;
             return `<div class="result-rank ${i === 0 ? 'first' : ''}" style="padding:6px 0;border-bottom:1px solid var(--border);">
-                ${i+1}. ${pName(seat)}：💰${gd.totalChips[seat]}（资金${gd.scores[seat]} + 面值3×${gd.chips3Final[seat]} = ${gd.chips3Final[seat]*3}）积分 <b>${sign}</b> 总积分${gd.totalScore[seat]}
+                ${i+1}. ${pName(seat)}：💰<b>${gd.totalChips[seat]}</b>（资金${gd.scores[seat]} + 面值3×${gd.chips3Final[seat]} = <span class="chips3-val">${chips3Val}</span>）积分 <b>${sign}</b> 总积分${gd.totalScore[seat]}
             </div>`;
         }).join('');
         // 轮次信息
         html += `<div style="margin-top:10px;color:var(--text-dim);">第 ${gd.round} / 4 轮</div>`;
+        // 确认进度（需所有存活玩家都确认才进入下一轮）
+        const players = Object.values(room.players || {}).filter(p => p && p.name);
+        const confirmedCount = Object.values(gd.resultConfirmed || {}).filter(Boolean).length;
+        const needCount = players.length;
+        const isMeConfirmed = !!(gd.resultConfirmed && gd.resultConfirmed[this.playerId]);
+        html += `<div class="result-confirm-info" style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);color:var(--text-dim);font-size:0.9em;">
+            ✅ 已确认 ${confirmedCount} / ${needCount} 名玩家${isMeConfirmed ? '（你已确认）' : ''}
+        </div>`;
         content.innerHTML = html;
-        document.getElementById('result-modal').classList.remove('hidden');
+        const modal = document.getElementById('result-modal');
+        // 若尚未显示弹窗，则显示；已显示则只更新内容，避免闪烁
+        if (modal.classList.contains('hidden')) {
+            modal.classList.remove('hidden');
+        }
+        // 更新确认按钮文案
+        const btn = document.getElementById('btn-result-confirm');
+        btn.textContent = isMeConfirmed ? '等待其他玩家确认...' : '确认结算';
+        btn.disabled = isMeConfirmed;
     },
 
     closeResult() {
-        document.getElementById('result-modal').classList.add('hidden');
         const room = this.currentRoomData;
         if (!room || !room.gameData) return;
         const gd = room.gameData;
+        // 标记自己已确认
+        gd.resultConfirmed = gd.resultConfirmed || {};
+        gd.resultConfirmed[this.playerId] = true;
+        saveRoom(this.currentRoomId, room);
+        this.showResult();   // 刷新确认进度显示
+
+        // 检查是否所有存活玩家都已确认（players 的值是 playerData，用其 playerId key 对应）
+        const players = Object.values(room.players || {}).filter(p => p && p.name);
+        const allConfirmedByPid = players.every(p => {
+            const pid = this.playerIdOfPlayer(p);
+            return gd.resultConfirmed[pid] === true;
+        });
+        if (!allConfirmedByPid) return;   // 未全部确认，等待
+        // 防重复推进：若已有其他玩家在推进下一轮，则跳过（避免竞态覆盖）
+        if (gd.advancing) return;
+        gd.advancing = true;
+        saveRoom(this.currentRoomId, room);
+
+        // 所有人已确认：关闭弹窗并进入下一轮/结束
+        document.getElementById('result-modal').classList.add('hidden');
         // 多轮：若不足4轮则进入下一轮，否则游戏结束
         if (gd.round < 4) {
             const prevScore = { ...gd.totalScore };
@@ -1146,6 +1192,17 @@ const app = {
             saveRoom(this.currentRoomId, room);
             this.showRoom();
         }
+    },
+
+    // 根据 playerData 获取其 playerId（room.players 的 key 就是 playerId）
+    playerIdOfPlayer(p) {
+        const room = this.currentRoomData;
+        if (room && room.players) {
+            for (const id in room.players) {
+                if (room.players[id] === p) return id;
+            }
+        }
+        return '';
     }
 };
 
