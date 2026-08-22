@@ -1081,23 +1081,20 @@ const app = {
                         paidBy.push(`${this.getSeatPlayer(seat).name}持股<span class="paid-count">${count}</span>张 → 付<span class="paid-count">${count}</span>个面值1筹码`);
                     }
                 });
-                // 大股东得到的金钱筹码「会变成3」：每收到 3 个转成 1 个面值3筹码，
-                // 剩余不足 3 的部分保持为 1 面值金钱筹码。
+                // 大股东得到的金钱筹码「会变成3」：每个收到的面值1筹码都变成1个面值3筹码
                 let receivedTotal = 0;
                 gd.seats.forEach(seat => {
                     if (seat === holderSeat) return;
                     receivedTotal += (gd.invested[seat] && gd.invested[seat][num]) || 0;
                 });
-                const newChips3 = Math.floor(receivedTotal / 3);   // 整3的部分转面值3筹码
-                const remainMoney = receivedTotal % 3;             // 余数保持1面值金钱
-                chips3[holderSeat] += newChips3;
-                money[holderSeat] += remainMoney;
-                // 结算展示：大股东 + 各股东持股/付筹码（不写面值3转换步骤）
+                // 每个收到的面值1筹码 -> 1个面值3筹码（不再保留为普通资金）
+                chips3[holderSeat] += receivedTotal;
+                // 结算展示：大股东 + 各股东持股/付筹码
                 const lines = [`<div class="settle-company">公司${num}：大股东 ${this.getSeatPlayer(holderSeat).name}（持股${maxCount}张）</div>`];
                 paidBy.forEach(p => lines.push(`<div class="settle-pay">&nbsp;&nbsp;${p}</div>`));
-                // 大股东共收到筹码数（面值1）提示，转换后的面值3体现在排名中
+                // 大股东共收到筹码数（全部转为面值3筹码）
                 if (receivedTotal > 0) {
-                    lines.push(`<div class="settle-pay">&nbsp;&nbsp;共收 <span class="paid-count">${receivedTotal}</span> 个面值1筹码</div>`);
+                    lines.push(`<div class="settle-pay">&nbsp;&nbsp;共收 <span class="paid-count">${receivedTotal}</span> 个面值1筹码，全部变为面值3筹码</div>`);
                 }
                 settlementLog.push(lines.join(''));
             }
