@@ -145,6 +145,18 @@ input[type="text"]:focus { border-color: var(--gold); }
 .turn-info { font-weight: 600; color: var(--gold); }
 .money-bar { margin: 8px 0; padding: 10px; background: var(--panel-strong); border-radius: 8px; font-weight: 600; }
 
+/* 公告栏：显示当前玩家的操作 */
+.announce-bar {
+    margin: 8px 0;
+    padding: 8px 12px;
+    background: var(--panel-strong);
+    border-radius: 8px;
+    border-left: 4px solid var(--gold);
+    font-size: 0.95em;
+    min-height: 20px;
+}
+.announce-bar.empty { border-left-color: transparent; color: var(--text-dim); }
+
 /* 三栏布局：左(上家) 中(游戏) 右(下家) */
 .game-layout {
     display: flex;

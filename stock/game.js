@@ -543,7 +543,8 @@ const app = {
         // 牌库
         let deck = buildDeck();
         deck = shuffle(deck);
-        // 随机移除5张
+        // 随机移除5张，并记录（结算页面要展示）
+        const removedCards = deck.slice(deck.length - 5);
         deck = deck.slice(0, deck.length - 5);
         // 发手牌
         const hands = {};
@@ -554,6 +555,9 @@ const app = {
             });
         }
         const seats = players.map(p => p.seat).sort((a, b) => a - b);
+        // 面值3筹码（每个玩家单独记录，结算用）
+        const chips3 = {};
+        seats.forEach(seat => { chips3[seat] = 0; });
         return {
             phase: 'play',          // play: 进行中, score: 结算
             seats: seats,
@@ -562,9 +566,14 @@ const app = {
             players: playersObj,    // 存 seat -> playerData（含 money）
             hands: hands,           // seat -> [卡牌]
             deck: deck,             // 剩余牌库
+            removedCards: removedCards,  // 本轮删除的5张牌
             market: [],             // 市场：{company, investMoney, owner}
             invested: {},           // seat -> { company: count }
             majorHolder: {},        // company -> seat（大股东）
+            chips3: chips3,         // seat -> 面值3筹码数量
+            roundScore: {},         // seat -> 本轮积分
+            totalScore: {},         // seat -> 总积分（多轮累加）
+            round: 1,               // 当前轮次（1-4）
             turnStep: 'draw',       // 'draw': 需抽牌, 'play': 需打牌
             turnCount: 0,
             history: []
@@ -583,6 +592,14 @@ const app = {
         const room = this.currentRoomData;
         if (!room || !room.gameData) return null;
         return (room.gameData.players[pid] || {}).seat;
+    },
+
+    // 广播公告：记录到 gd.announcement，所有玩家通过轮询看到
+    announce(text) {
+        const room = this.currentRoomData;
+        if (!room || !room.gameData) return;
+        room.gameData.announcement = text;
+        room.gameData.announceTime = Date.now();
     },
 
     // 渲染单个玩家的投资区域（含大股东筹码，放在该玩家面前）
@@ -651,9 +668,19 @@ const app = {
         const isMyTurn = gd.currentPlayerSeat === mySeat;
         document.getElementById('turn-info').textContent = isMyTurn ? '轮到你了' : `等待 ${cur ? cur.name : ''}...`;
 
-        // 资金
+        // 资金 + 牌库数量
         const me = this.getSeatPlayer(mySeat);
-        document.getElementById('money-bar').textContent = `💰 我的资金：${me ? me.money : 0}`;
+        document.getElementById('money-bar').textContent = `💰 我的资金：${me ? me.money : 0} | 🃏 牌库剩余：${gd.deck ? gd.deck.length : 0}张`;
+
+        // 公告栏：显示当前玩家最近的操作
+        const annEl = document.getElementById('announce-bar');
+        if (gd.announcement) {
+            annEl.innerHTML = `<strong>📢 ${gd.announcement}</strong>`;
+            annEl.classList.remove('empty');
+        } else {
+            annEl.innerHTML = '等待玩家操作...';
+            annEl.classList.add('empty');
+        }
 
         // 大股东信息
         const stockInfo = document.getElementById('stock-info');
@@ -778,6 +805,7 @@ const app = {
         gd.hands[mySeat].push(card);
         // 从牌库抽牌，本轮不是从市场拿牌，清除限制
         gd.tookFromMarketCompany = null;
+        this.announce(`${this.getSeatPlayer(mySeat).name} 从牌库抽了公司${card}的牌${cost > 0 ? '（支付市场投资' + cost + '元）' : ''}`);
         playSfx('draw');
         this.afterDraw();
         saveRoom(this.currentRoomId, room);
@@ -801,6 +829,7 @@ const app = {
         gd.market.splice(idx, 1);
         // 记录本轮是从市场拿的哪家公司（该公司的牌本轮不能打出到市场，但可投资）
         gd.tookFromMarketCompany = mc.company;
+        this.announce(`${this.getSeatPlayer(mySeat).name} 从市场拿了公司${mc.company}的牌（+💰${mc.investMoney}）`);
         playSfx('draw');
         this.afterDraw();
         saveRoom(this.currentRoomId, room);
@@ -829,6 +858,7 @@ const app = {
         if (gd.tookFromMarketCompany === card) { this.showToast('本轮从市场拿到该公司，不能打出到市场'); return; }
         gd.hands[mySeat].splice(this.selectedHandCard, 1);
         gd.market.push({ company: card, investMoney: 0 });
+        this.announce(`${this.getSeatPlayer(mySeat).name} 将公司${card}的牌打出到市场`);
         playSfx('play');
         this.checkAllMajorHolders();   // 打牌后结算所有公司大股东
         this.endTurn();
@@ -848,6 +878,7 @@ const app = {
         gd.hands[mySeat].splice(this.selectedHandCard, 1);
         gd.invested[mySeat] = gd.invested[mySeat] || {};
         gd.invested[mySeat][card] = (gd.invested[mySeat][card] || 0) + 1;
+        this.announce(`${this.getSeatPlayer(mySeat).name} 将公司${card}的牌投资到面前`);
         playSfx('invest');
         this.checkAllMajorHolders();   // 打牌后结算所有公司大股东
         this.endTurn();
@@ -855,7 +886,7 @@ const app = {
         this.renderGame();   // 立即刷新界面，让操作即时生效
     },
 
-    // 结算所有公司的大股东
+    // 结算所有公司的大股东（游戏进行中：平手时保持原大股东，超过才转移）
     checkAllMajorHolders() {
         COMPANIES.forEach(num => {
             let maxCount = 0, holderSeat = null, tie = false;
@@ -865,12 +896,32 @@ const app = {
                 else if (count === maxCount && count > 0) { tie = true; }
             });
             const prev = this.currentRoomData.gameData.majorHolder[num];
-            // 平手时清空大股东；否则更新
-            const newHolder = (tie || maxCount === 0) ? null : holderSeat;
-            if (prev !== newHolder) {
-                this.currentRoomData.gameData.majorHolder[num] = newHolder;
-                if (newHolder !== null) {
-                    this.showToast(`公司${num}大股东：${this.getSeatPlayer(newHolder).name}`);
+            // 规则：大股东一直存在，除非被「超过」才转移；平手保持原大股东（不清空）
+            if (maxCount === 0) {
+                // 没有人投资 → 无大股东
+                if (prev !== null) this.currentRoomData.gameData.majorHolder[num] = null;
+            } else if (tie) {
+                // 平手：保持原大股东（不清空）
+                // 若原本没有大股东（首次出现平手），则仍无大股东
+                if (prev === undefined || prev === null) {
+                    this.currentRoomData.gameData.majorHolder[num] = null;
+                }
+            } else {
+                // 唯一最多者：若超过原大股东则转移；否则保持
+                // 原大股东数量 = 原大股东的投资数
+                if (prev !== undefined && prev !== null && prev !== holderSeat) {
+                    // 原大股东仍存在，检查是否被超过（新 holder 数量 > 原 holder 数量才转移）
+                    const prevCount = (this.currentRoomData.gameData.invested[prev] && this.currentRoomData.gameData.invested[prev][num]) || 0;
+                    if (maxCount > prevCount) {
+                        this.currentRoomData.gameData.majorHolder[num] = holderSeat;
+                        this.showToast(`公司${num}大股东变更：${this.getSeatPlayer(holderSeat).name}`);
+                    }
+                    // 否则保持原大股东（不转移）
+                } else {
+                    this.currentRoomData.gameData.majorHolder[num] = holderSeat;
+                    if (prev !== holderSeat) {
+                        this.showToast(`公司${num}大股东：${this.getSeatPlayer(holderSeat).name}`);
+                    }
                 }
             }
         });
@@ -920,7 +971,7 @@ const app = {
     finalize() {
         const room = this.currentRoomData;
         const gd = room.gameData;
-        // 所有玩家把剩余手牌投资到面前
+        // 1. 所有玩家把剩余手牌投资到面前
         gd.seats.forEach(seat => {
             const hand = gd.hands[seat] || [];
             gd.invested[seat] = gd.invested[seat] || {};
@@ -929,9 +980,12 @@ const app = {
             });
             gd.hands[seat] = [];
         });
-        // 各公司结算（从5到10）
+        // 2. 各公司结算（从5到10）
+        // 记录结算过程供展示
+        const settlementLog = [];
         const money = {};
-        gd.seats.forEach(seat => { money[seat] = this.getSeatPlayer(seat).money; });
+        const chips3 = {};
+        gd.seats.forEach(seat => { money[seat] = this.getSeatPlayer(seat).money; chips3[seat] = gd.chips3[seat] || 0; });
         COMPANIES.forEach(num => {
             let maxCount = 0, holderSeat = null, tie = false;
             gd.seats.forEach(seat => {
@@ -939,23 +993,75 @@ const app = {
                 if (count > maxCount) { maxCount = count; holderSeat = seat; tie = false; }
                 else if (count === maxCount && count > 0) { tie = true; }
             });
-            if (holderSeat !== null && !tie && maxCount > 0) {
-                // 其他持有者支付给大股东
+            if (maxCount === 0) {
+                settlementLog.push(`公司${num}：无人投资，无大股东`);
+            } else if (tie) {
+                settlementLog.push(`公司${num}：最多${maxCount}张，平手，无大股东`);
+            } else {
+                // 大股东获得所有其他持有者的筹码
+                const paidBy = [];
                 gd.seats.forEach(seat => {
                     if (seat === holderSeat) return;
                     const count = (gd.invested[seat] && gd.invested[seat][num]) || 0;
                     if (count > 0) {
                         money[seat] -= count;
                         money[holderSeat] += count;
+                        paidBy.push(`${this.getSeatPlayer(seat).name}${count}张`);
                     }
                 });
+                const paidText = paidBy.length > 0 ? `，收自 ${paidBy.join('、')}` : '';
+                settlementLog.push(`公司${num}：大股东 ${this.getSeatPlayer(holderSeat).name}（${maxCount}张）${paidText}`);
+                // 大股东收到的筹码转为面值3筹码（每收到 3 点变 1 个面值3）
+                // 收到的总额
+                let received = 0;
+                gd.seats.forEach(seat => {
+                    if (seat === holderSeat) return;
+                    received += (gd.invested[seat] && gd.invested[seat][num]) || 0;
+                });
+                chips3[holderSeat] += Math.floor(received / 3);
             }
-            // 平手：所有玩家均无需支付
         });
-        // 保存最终资金
-        gd.seats.forEach(seat => { this.getSeatPlayer(seat).money = money[seat]; });
+        // 3. 保存最终资金和面值3筹码
+        gd.seats.forEach(seat => {
+            this.getSeatPlayer(seat).money = money[seat];
+            gd.chips3[seat] = chips3[seat];
+        });
+        // 4. 计算总筹码并排名
+        const totalChips = {};
+        gd.seats.forEach(seat => { totalChips[seat] = money[seat] + chips3[seat]; });
+        // 排名：先按总筹码，同分按面值3筹码
+        const ranked = [...gd.seats].sort((a, b) => {
+            if (totalChips[b] !== totalChips[a]) return totalChips[b] - totalChips[a];
+            return chips3[b] - chips3[a];
+        });
+        // 5. 排名积分：第一名+2、第二名+1、中间0、最后一名-1（并列处理）
+        const scoreMap = {};
+        const n = ranked.length;
+        ranked.forEach((seat, i) => {
+            let pts = 0;
+            if (i === 0) pts = 2;
+            else if (i === 1) pts = 1;
+            else if (i === n - 1) pts = -1;
+            // 并列：若与前一名总筹码和面值3都相同，则视为并列同分
+            if (i > 0) {
+                const prevSeat = ranked[i-1];
+                if (totalChips[seat] === totalChips[prevSeat] && chips3[seat] === chips3[prevSeat]) {
+                    pts = scoreMap[prevSeat];   // 并列取前一名积分
+                }
+            }
+            scoreMap[seat] = pts;
+        });
+        // 累加到总积分
+        gd.seats.forEach(seat => {
+            gd.totalScore[seat] = (gd.totalScore[seat] || 0) + (scoreMap[seat] || 0);
+        });
         gd.phase = 'score';
         gd.scores = money;
+        gd.chips3Final = chips3;
+        gd.totalChips = totalChips;
+        gd.rank = ranked;
+        gd.roundScores = scoreMap;
+        gd.settlementLog = settlementLog;
         saveRoom(this.currentRoomId, room);
         playSfx('score');
         this.showResult();
@@ -966,26 +1072,50 @@ const app = {
         const room = this.currentRoomData;
         const gd = room.gameData;
         const content = document.getElementById('result-content');
-        const sorted = [...gd.seats].sort((a, b) => gd.scores[b] - gd.scores[a]);
-        content.innerHTML = '<h3>最终资金</h3>' + sorted.map((seat, i) => {
-            const p = this.getSeatPlayer(seat);
-            return `<div style="padding:6px 0;border-bottom:1px solid var(--border);">
-                ${i+1}. ${p.name}：💰 ${gd.scores[seat]}
+        const pName = (seat) => this.getSeatPlayer(seat).name;
+        // 1. 展示删除的5张牌
+        let html = `<h3>① 本轮移除的 5 张牌</h3><div class="result-removed">${(gd.removedCards || []).map(c => `<span class="inv-chip" style="background:${COMPANIES_COLORS[COMPANIES.indexOf(c)] || '#888'};">${c}</span>`).join(' ')}</div>`;
+        // 2. 公司结算过程
+        html += `<h3>② 公司结算</h3><div class="result-settle">${(gd.settlementLog || []).map(s => `<div>${s}</div>`).join('')}</div>`;
+        // 3. 排名
+        html += `<h3>③ 本轮排名（总筹码 = 资金 + 面值3筹码）</h3>`;
+        html += (gd.rank || []).map((seat, i) => {
+            const pts = gd.roundScores[seat];
+            const sign = pts > 0 ? '+' + pts : pts;
+            return `<div class="result-rank ${i === 0 ? 'first' : ''}" style="padding:6px 0;border-bottom:1px solid var(--border);">
+                ${i+1}. ${pName(seat)}：💰${gd.totalChips[seat]}（资金${gd.scores[seat]} + 面值3×${gd.chips3Final[seat]}）积分 <b>${sign}</b> 总积分${gd.totalScore[seat]}
             </div>`;
         }).join('');
+        // 轮次信息
+        html += `<div style="margin-top:10px;color:var(--text-dim);">第 ${gd.round} / 4 轮</div>`;
+        content.innerHTML = html;
         document.getElementById('result-modal').classList.remove('hidden');
     },
 
     closeResult() {
         document.getElementById('result-modal').classList.add('hidden');
-        // 结算后回到房间（本地版简化：重置房间为等待）
         const room = this.currentRoomData;
-        if (room) {
+        if (!room || !room.gameData) return;
+        const gd = room.gameData;
+        // 多轮：若不足4轮则进入下一轮，否则游戏结束
+        if (gd.round < 4) {
+            const prevScore = { ...gd.totalScore };
+            const prevChips3 = { ...gd.chips3 };
+            const newGd = this.initGameData(room.players);
+            newGd.round = gd.round + 1;
+            newGd.totalScore = prevScore;
+            newGd.chips3 = prevChips3;
+            room.status = 'playing';
+            room.gameData = newGd;
+            saveRoom(this.currentRoomId, room);
+            this.showGame();
+        } else {
+            // 4轮结束，游戏结束：回房间，显示最终排名
             room.status = 'waiting';
             room.gameData = null;
             saveRoom(this.currentRoomId, room);
+            this.showRoom();
         }
-        this.showRoom();
     }
 };
 
