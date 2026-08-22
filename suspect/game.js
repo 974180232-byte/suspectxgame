@@ -1342,7 +1342,7 @@ const app = {
         const myIndex = sortedSeats.indexOf(mySeat);
         const downSeat = sortedSeats[(myIndex + 1) % n];   // 下家
         const upSeat = sortedSeats[(myIndex - 1 + n) % n]; // 上家
-        // 填充左右两栏：左栏=上家，右栏=下家
+        // 填充左右两栏：左栏=下家，右栏=上家
         const renderNeighbor = (seat, label) => {
             const playerId = gd.playerBySeat && gd.playerBySeat[seat];
             const player = playerId ? players[playerId] : null;
@@ -1355,8 +1355,8 @@ const app = {
         };
         const leftEl = document.getElementById('left-neighbor');
         const rightEl = document.getElementById('right-neighbor');
-        if (leftEl) leftEl.innerHTML = renderNeighbor(upSeat, '⬆ 上家');
-        if (rightEl) rightEl.innerHTML = renderNeighbor(downSeat, '⬇ 下家');
+        if (leftEl) leftEl.innerHTML = renderNeighbor(downSeat, '⬇ 下家');
+        if (rightEl) rightEl.innerHTML = renderNeighbor(upSeat, '⬆ 上家');
 
         container.innerHTML = sortedSeats.map(seat => {
             const playerId = gd.playerBySeat[seat];

@@ -695,8 +695,8 @@ const app = {
         };
         const leftEl = document.getElementById('left-neighbor');
         const rightEl = document.getElementById('right-neighbor');
-        if (leftEl) leftEl.innerHTML = renderStockNeighbor(upSeat, '⬆ 上家');
-        if (rightEl) rightEl.innerHTML = renderStockNeighbor(downSeat, '⬇ 下家');
+        if (leftEl) leftEl.innerHTML = renderStockNeighbor(downSeat, '⬇ 下家');
+        if (rightEl) rightEl.innerHTML = renderStockNeighbor(upSeat, '⬆ 上家');
 
         // 回合信息
         const cur = this.getSeatPlayer(gd.currentPlayerSeat);
