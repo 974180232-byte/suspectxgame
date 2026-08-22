@@ -57,19 +57,28 @@
                 <span class="room-name" id="game-room-name"></span>
                 <span class="status" id="game-status"></span>
             </div>
-            <div class="players-row" id="game-players"></div>
-            <div class="table-area" id="table-area">
-                <div style="text-align:center;font-size:0.9em;color:var(--text-dim);" id="phase-hint"></div>
-                <div class="middle-cards" id="middle-cards"></div>
-                <div id="revealed-card-area" class="revealed-info hidden"></div>
-                <div id="result-area" class="hidden" style="width:100%;"></div>
+            <div class="game-layout">
+                <!-- 左栏：上家 -->
+                <div class="side-panel left" id="left-neighbor"></div>
+                <!-- 中间：游戏主体 -->
+                <div class="game-main">
+                    <div class="players-row" id="game-players"></div>
+                    <div class="table-area" id="table-area">
+                        <div style="text-align:center;font-size:0.9em;color:var(--text-dim);" id="phase-hint"></div>
+                        <div class="middle-cards" id="middle-cards"></div>
+                        <div id="revealed-card-area" class="revealed-info hidden"></div>
+                        <div id="result-area" class="hidden" style="width:100%;"></div>
+                    </div>
+                    <div class="hand-area" id="hand-area">
+                        <span class="hand-label">🃏 你的手牌</span>
+                        <div class="hand-card" id="hand-card-display">?</div>
+                        <span class="hand-label" id="hand-card-hint" style="font-size:0.75em;"></span>
+                    </div>
+                    <div class="action-bar" id="action-bar"></div>
+                </div>
+                <!-- 右栏：下家 -->
+                <div class="side-panel right" id="right-neighbor"></div>
             </div>
-            <div class="hand-area" id="hand-area">
-                <span class="hand-label">🃏 你的手牌</span>
-                <div class="hand-card" id="hand-card-display">?</div>
-                <span class="hand-label" id="hand-card-hint" style="font-size:0.75em;"></span>
-            </div>
-            <div class="action-bar" id="action-bar"></div>
         </div>
     </div>
 

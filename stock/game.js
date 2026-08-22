@@ -623,6 +623,29 @@ const app = {
         const mySeat = this.getSeatByPid(this.playerId);
         if (mySeat === null || mySeat === undefined) { this.showLobby(); return; }
 
+        // 左右栏：上家（座位号-1）/下家（座位号+1）
+        const seats = [...gd.seats].sort((a, b) => a - b);
+        const n = seats.length;
+        const myIdx = seats.indexOf(mySeat);
+        const upSeat = seats[(myIdx - 1 + n) % n];
+        const downSeat = seats[(myIdx + 1) % n];
+        const renderStockNeighbor = (seat, label) => {
+            const p = this.getSeatPlayer(seat);
+            if (!p) return `<div class="neighbor-label">${label}</div><div class="neighbor-name">空</div>`;
+            const colorIdx = seats.indexOf(seat);
+            const color = PLAYER_COLORS[colorIdx % PLAYER_COLORS.length];
+            return `
+                <div class="neighbor-label">${label}</div>
+                <div class="neighbor-chip" style="background:${color};">${p.name.slice(0,2)}</div>
+                <div class="neighbor-name">${p.name}</div>
+                <div class="neighbor-money">💰${p.money}</div>
+            `;
+        };
+        const leftEl = document.getElementById('left-neighbor');
+        const rightEl = document.getElementById('right-neighbor');
+        if (leftEl) leftEl.innerHTML = renderStockNeighbor(upSeat, '⬆ 上家');
+        if (rightEl) rightEl.innerHTML = renderStockNeighbor(downSeat, '⬇ 下家');
+
         // 回合信息
         const cur = this.getSeatPlayer(gd.currentPlayerSeat);
         const isMyTurn = gd.currentPlayerSeat === mySeat;

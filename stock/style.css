@@ -145,6 +145,52 @@ input[type="text"]:focus { border-color: var(--gold); }
 .turn-info { font-weight: 600; color: var(--gold); }
 .money-bar { margin: 8px 0; padding: 10px; background: var(--panel-strong); border-radius: 8px; font-weight: 600; }
 
+/* 三栏布局：左(上家) 中(游戏) 右(下家) */
+.game-layout {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+}
+.side-panel {
+    width: 96px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: center;
+}
+.side-panel .neighbor-label {
+    font-size: 0.75em;
+    color: var(--text-dim);
+    font-weight: 600;
+}
+.side-panel .neighbor-name {
+    font-size: 0.9em;
+    font-weight: 700;
+    text-align: center;
+    word-break: break-all;
+}
+.side-panel .neighbor-chip {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.8em;
+    color: #fff;
+}
+.side-panel .neighbor-money {
+    font-size: 0.75em;
+    color: var(--gold);
+}
+.game-main {
+    flex: 1;
+    min-width: 0;
+}
+
 /* 大股东信息 */
 .stock-info { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
 .stock-chip {

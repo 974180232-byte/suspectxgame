@@ -235,6 +235,47 @@ button:disabled {
     padding: 8px;
 }
 
+/* 三栏布局：左(上家) 中(游戏) 右(下家) */
+.game-layout {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+}
+.side-panel {
+    width: 96px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: center;
+}
+.side-panel .neighbor-label {
+    font-size: 0.75em;
+    color: var(--text-dim);
+    font-weight: 600;
+}
+.side-panel .neighbor-name {
+    font-size: 0.9em;
+    font-weight: 700;
+    text-align: center;
+    word-break: break-all;
+}
+.side-panel .neighbor-chip {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.8em;
+}
+.game-main {
+    flex: 1;
+    min-width: 0;
+}
+
 .player-chip {
     display: flex;
     align-items: center;
@@ -266,6 +307,15 @@ button:disabled {
 
 .player-chip .dot.online {
     background: var(--green);
+}
+
+/* 颜色标志物：表示该玩家的投票/标志物颜色 */
+.player-chip .color-tag {
+    width: 14px;
+    height: 14px;
+    border-radius: 4px;
+    flex-shrink: 0;
+    border: 1px solid rgba(0,0,0,0.2);
 }
 
 .player-chip .markers {

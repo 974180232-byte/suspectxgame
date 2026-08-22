@@ -1342,6 +1342,22 @@ const app = {
         const myIndex = sortedSeats.indexOf(mySeat);
         const downSeat = sortedSeats[(myIndex + 1) % n];   // 下家
         const upSeat = sortedSeats[(myIndex - 1 + n) % n]; // 上家
+        // 填充左右两栏：左栏=上家，右栏=下家
+        const renderNeighbor = (seat, label) => {
+            const playerId = gd.playerBySeat && gd.playerBySeat[seat];
+            const player = playerId ? players[playerId] : null;
+            if (!player) return `<div class="neighbor-label">${label}</div><div class="neighbor-name">空</div>`;
+            return `
+                <div class="neighbor-label">${label}</div>
+                <div class="neighbor-chip" style="background:${this.getPlayerColor(playerId, gd)};color:#fff;">${player.name.slice(0,2)}</div>
+                <div class="neighbor-name">${player.name}</div>
+            `;
+        };
+        const leftEl = document.getElementById('left-neighbor');
+        const rightEl = document.getElementById('right-neighbor');
+        if (leftEl) leftEl.innerHTML = renderNeighbor(upSeat, '⬆ 上家');
+        if (rightEl) rightEl.innerHTML = renderNeighbor(downSeat, '⬇ 下家');
+
         container.innerHTML = sortedSeats.map(seat => {
             const playerId = gd.playerBySeat[seat];
             const player = players[playerId];
@@ -1351,20 +1367,14 @@ const app = {
             const hasVoted = gd.hasVoted && gd.hasVoted[playerId];
             const markers = gd.initMarkers && gd.initMarkers[playerId] !== undefined ? gd.initMarkers[playerId] : (player.markers || 6);
             const wrongMarkers = gd.totalWrongMarkers && gd.totalWrongMarkers[playerId] !== undefined ? gd.totalWrongMarkers[playerId] : 0;
-            // 上下家标注：只对「我」显示上下家是谁，方便知道牌换给谁
-            let neighbor = '';
-            if (isMe) {
-                const upName = gd.playerBySeat[upSeat] ? players[gd.playerBySeat[upSeat]]?.name : '?';
-                const downName = gd.playerBySeat[downSeat] ? players[gd.playerBySeat[downSeat]]?.name : '?';
-                neighbor = `<div class="neighbor-info">上家:${upName} ← → 下家:${downName}</div>`;
-            }
+            const playerColor = this.getPlayerColor(playerId, gd);
             return `
                 <div class="player-chip ${isActive ? 'active' : ''} ${hasVoted ? 'voted' : ''}">
-                    <span class="dot ${player.connected ? 'online' : ''}" style="background:${this.getPlayerColor(playerId, gd)}"></span>
+                    <span class="dot ${player.connected ? 'online' : ''}" style="background:${playerColor}"></span>
                     <span>${isMe ? '你' : ''}${player.name} #${seat+1}</span>
                     <span class="markers">🔵${markers} <span class="wrong-markers">🔴${wrongMarkers}</span></span>
                     ${hasVoted ? '✅' : ''}
-                    ${neighbor}
+                    <span class="color-tag" style="background:${playerColor}"></span>
                 </div>
             `;
         }).join('');

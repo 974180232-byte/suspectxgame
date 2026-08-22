@@ -62,13 +62,22 @@
                     <h2>📈 大股东之神秘的9和谁想吃10</h2>
                     <span id="turn-info" class="turn-info"></span>
                 </div>
-                <div id="money-bar" class="money-bar"></div>
-                <div id="stock-info" class="stock-info"></div>
-                <div id="market-area" class="market-area"></div>
-                <div id="invest-others" class="invest-others"></div>
-                <div id="invest-mine" class="invest-area"></div>
-                <div id="hand-area" class="hand-area"></div>
-                <div id="action-area" class="action-area"></div>
+                <div class="game-layout">
+                    <!-- 左栏：上家 -->
+                    <div class="side-panel left" id="left-neighbor"></div>
+                    <!-- 中间：游戏主体 -->
+                    <div class="game-main">
+                        <div id="money-bar" class="money-bar"></div>
+                        <div id="stock-info" class="stock-info"></div>
+                        <div id="market-area" class="market-area"></div>
+                        <div id="invest-others" class="invest-others"></div>
+                        <div id="invest-mine" class="invest-area"></div>
+                        <div id="hand-area" class="hand-area"></div>
+                        <div id="action-area" class="action-area"></div>
+                    </div>
+                    <!-- 右栏：下家 -->
+                    <div class="side-panel right" id="right-neighbor"></div>
+                </div>
             </div>
         </div>
 
