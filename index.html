@@ -40,12 +40,22 @@
             <textarea id="bug-desc" rows="5" placeholder="请尽量详细描述 bug 出现的情况、操作步骤、预期与实际情况..." style="width:100%;padding:10px;border:1px solid #cfd3d9;border-radius:8px;margin-bottom:14px;font-size:1em;resize:vertical;box-sizing:border-box;"></textarea>
             <div style="display:flex;gap:10px;justify-content:flex-end;">
                 <button onclick="closeBugReport()" style="padding:10px 18px;border:1px solid #cfd3d9;background:#f4f5f7;border-radius:10px;cursor:pointer;">取消</button>
-                <button onclick="sendBugReport()" style="padding:10px 18px;border:none;background:#d0342c;color:#fff;border-radius:10px;cursor:pointer;">✉️ 通过邮件发送</button>
+                <button id="bug-send-btn" onclick="sendBugReport()" style="padding:10px 18px;border:none;background:#d0342c;color:#fff;border-radius:10px;cursor:pointer;">✉️ 通过邮件发送</button>
             </div>
         </div>
     </div>
 
+    <!-- EmailJS SDK（自动发送反馈邮件） -->
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
     <script>
+        // EmailJS 配置（公钥是公开安全的，邮箱地址只存在于模板中，玩家看不到）
+        const EMAILJS_SERVICE_ID = 'service_6uzsnr8';
+        const EMAILJS_TEMPLATE_ID = 'template_h6knzn9';
+        const EMAILJS_PUBLIC_KEY = '4JD9-ZRs6tl0nbMPq';
+        (function () {
+            emailjs.init(EMAILJS_PUBLIC_KEY);
+        })();
+
         function openBugReport() {
             document.getElementById('bug-modal').style.display = 'flex';
             document.getElementById('bug-desc').value = '';
@@ -57,10 +67,24 @@
             var game = document.getElementById('bug-game').value;
             var desc = document.getElementById('bug-desc').value.trim();
             if (!desc) { alert('请填写 Bug 描述'); return; }
-            var subject = encodeURIComponent('[Bug反馈] ' + game);
-            var body = encodeURIComponent('所属游戏：' + game + '\n\nBug 描述：\n' + desc + '\n\n—— 请帮忙修复，谢谢！');
-            window.location.href = 'mailto:2932804179@qq.com?subject=' + subject + '&body=' + body;
-            closeBugReport();
+            var btn = document.getElementById('bug-send-btn');
+            // 传递模板变量
+            var params = {
+                game: game,
+                from_user: '匿名玩家',
+                time: new Date().toLocaleString('zh-CN'),
+                message: desc
+            };
+            if (btn) btn.disabled = true;
+            emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, params)
+                .then(function () {
+                    alert('✅ 反馈已发送，感谢你的帮助！');
+                    closeBugReport();
+                })
+                .catch(function (err) {
+                    alert('❌ 发送失败：' + (err && err.text ? err.text : '网络错误，请重试'));
+                    if (btn) btn.disabled = false;
+                });
         }
     </script>
 
